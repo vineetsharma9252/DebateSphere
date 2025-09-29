@@ -1,0 +1,13 @@
+ //App.tsx
+
+ <View style={styles.content}>
+             <Stack.Navigator initialRouteName="SignIn" screenOptions={{ headerShown: false }}>
+               <Stack.Screen name="SignIn" component={SignIn} />
+               <Stack.Screen name="SignUp" component={SignUp} />
+             </Stack.Navigator>
+ </View>
+
+ // Menubar.tsx
+ <TouchableOpacity onPress={() => handleGoogleAuth()} style={ styles.navButton }>
+         <Image source={require("../assets/settings.png")} style={styles.link} />
+</TouchableOpacity>
