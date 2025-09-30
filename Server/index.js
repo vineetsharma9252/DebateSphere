@@ -6,6 +6,7 @@ import cors from "cors";
 import user from "./models/Users.js"; // Your Mongoose model
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
+import Room from "./models/Room.js" ;
 
 dotenv.config(); // Loads variables from .env into process.env
 
