@@ -161,6 +161,39 @@ app.post("/signup", async (req, res) => {
   res.status(201).json({ message: "User registered", user: newUser._id });
 });
 
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const findUser = await User.findOne({ username });
+    if (!findUser) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const isMatch = await bcrypt.compare(password, findUser.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    res.status(200).json({ message: 'Login successful', username: findUser.username });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error', message: error.message });
+  }
+});
+
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const { topic } = req.query;
+    if (!topic) {
+      return res.status(400).json({ error: 'Topic is required' });
+    }
+    const rooms = await Room.find({ topic });
+    res.json(rooms);
+  } catch (error) {
+    console.error('Error fetching rooms:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Health check route
 app.get("/", (req, res) => {
   res.send("Chat server is running");
