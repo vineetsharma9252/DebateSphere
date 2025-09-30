@@ -3,7 +3,6 @@ import { StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-
 import SignIn from './Components/Auth/SignIn';
 import SignUp from './Components/Auth/SignUp';
 import Navbar from './Components/Home/Navbar';
@@ -18,10 +17,10 @@ import DebatePage from './Components/Room/DebatePages';
 function MainScreen({ component: Component, navigation, route }) {
   return (
     <View style={styles.container}>
+      <Navbar navigation={navigation} />
       <View style={styles.content}>
         <Component navigation={navigation} route={route} />
       </View>
-      <Navbar navigation={navigation} />
     </View>
   );
 }
@@ -78,7 +77,8 @@ function App() {
                       component={DebatePageWrapper}
                       options={({ route }) => ({
                         title: `${route.params?.topic || 'Debates'} Debates`,
-                      })}
+                      }) ,{headerShown:false}}
+
                     />
           <Stack.Screen
             name="ChatRoom"

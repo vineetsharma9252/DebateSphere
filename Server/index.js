@@ -191,7 +191,7 @@ app.get('/api/rooms', async (req, res) => {
     res.json(rooms);
   } catch (error) {
     console.error('Error fetching rooms:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error and error is '+error });
   }
 });
 
