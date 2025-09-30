@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import io from 'socket.io-client';
 
-const SERVER_URL = 'http://localhost:5000/';
+const SERVER_URL = 'https://debatesphere-11.onrender.com/';
 
 function ImageUploader({ onImageSelected }) {
   const fileInputRef = useRef(null);
