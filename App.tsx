@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1, // Takes remaining space above Navbar
+    flex: 1,
   },
 });
 

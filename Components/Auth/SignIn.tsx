@@ -15,16 +15,39 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from "react-native-vector-icons/FontAwesome";
 import { useState } from 'react' ;
-const SignIn = ()=>{
+import axios from 'axios' ;
 
+const BACKEND_URL = "https://debatesphere-11.onrender.com/login" ;
 
+const SignIn =({})=>{
 
+    const [username, setUsername] = useState("");
+    const [password , setPassword] = useState("");
     const navigation = useNavigation();
     const handleNewAccount = ()=>{
     navigation.navigate("SignUp") ;
     }
 
-    const handleSignIn = ()=>{
+    const handleSignIn = async ()=>{
+        console.log("yes this is working");
+    try{
+        console.log("Username is " + username) ;
+        console.log("Password is " + password) ;
+    const response = await axios.post(BACKEND_URL , { username , password }) ;
+
+
+        if (response.status === 200){
+            alert("User Logged in Successfully") ;
+        navigation.navigate("Dashboard") ;
+
+
+        }
+        else{
+            alert("Something went wrong try again")
+            }}
+        catch(error){
+            console.log("Something went wrong try again"+error) ;
+        }
 
     }
 
@@ -45,13 +68,13 @@ const SignIn = ()=>{
             <Text style={styles.label}>
             Email/Username
             </Text>
-            <TextInput  defaultValue="example@gmail.com"/>
+            <TextInput  value={username} onChangeText={setUsername}/>
             </View>
             <View>
             <Text style={styles.label}>
             Password
             </Text>
-            <TextInput  defaultValue="12345"/>
+            <TextInput  value={password} onChangeText={setPassword} secureTextEntry={true}/>
 
             </View>
             <View>

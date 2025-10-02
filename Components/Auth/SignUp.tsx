@@ -19,20 +19,25 @@ import { useNavigation } from "@react-navigation/native";
 const BACKEND_URL = "https://debatesphere-11.onrender.com/signup" ;
 
 const SignUp = ()=>{
+    const navigation = useNavigation() ;
     const [username , setUsername] = useState("") ;
     const [email , setEmail] = useState("") ;
     const [password , setPassword] = useState("") ;
     const [confirmPassword , setConfirmPassword] = useState("") ;
 
+    const handleCreatedAccount = ()=>{
+        navigation.navigate("SignIn");
 
+    }
 
 
 
     const handleSignUp = async ()=>{
-    console.log("yes it is working ")
     if (password !== confirmPassword){
         alert("password does not match") ;
         }
+    console.log("yes it is working ");
+    try{
     const response =  await axios.post(BACKEND_URL, {username,email , password}) ;
     console.log(response)
     if (response.status === 201){
@@ -42,6 +47,12 @@ const SignUp = ()=>{
     navigation.navigate("SignIn") ;
 
     }
+    else if (response.status === 409){
+
+        alert("User Already Exist , Please Login");
+        navigation.navigate("SignIn") ;
+
+        }
     else if (response.status === 400){
 
         alert(`Missing Field Error and Fields are ${username}, ${email}, ${password}`);
@@ -50,6 +61,11 @@ const SignUp = ()=>{
     else{
         console.log("Something went wrong ")
     alert("user not created , Something Went Wrong");
+
+    }
+}
+catch(err){
+    console.log("Error is " , error) ;
 
     }
     }
@@ -95,6 +111,9 @@ const SignUp = ()=>{
 
                <Text style={styles.buttonText}>SignUp</Text>
              </Pressable>
+            <TouchableOpacity onPress={handleCreatedAccount}>
+            <Text style={styles.new_acc}>Already have account</Text>
+            </TouchableOpacity>
             </View>
         </View>
         </View>
