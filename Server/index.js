@@ -145,7 +145,7 @@ io.on("connection", (socket) => {
 
 // Signup Route
 app.post("/signup", async (req, res) => {
-  const { username, password, email, phone } = req.body;
+  const { username, password, email } = req.body;
   if (!username || !password || !email) {
     return res.status(400).json({ error: "Missing fields" });
   }
@@ -156,7 +156,7 @@ app.post("/signup", async (req, res) => {
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = new user({ username, password: hashedPassword, email, phone });
+  const newUser = new user({ username, password: hashedPassword, email });
   await newUser.save();
 
   res.status(201).json({ message: "User registered", user: newUser._id });

@@ -13,7 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import io from 'socket.io-client';
-
+import { useRoute } from '@react-navigation/native';
 const SERVER_URL = 'https://debatesphere-11.onrender.com/';
 
 function ImageUploader({ onImageSelected }) {
@@ -22,7 +22,7 @@ function ImageUploader({ onImageSelected }) {
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // Limit to 5MB
+      if (file.size > 5 * 1024 * 1024) {
         Alert.alert('Error', 'Image size must be less than 5MB');
         return;
       }
@@ -39,8 +39,6 @@ function ImageUploader({ onImageSelected }) {
   };
 
   const handleMobileImagePicker = async () => {
-    // For mobile, we'll simulate an image picker (since no external libraries)
-    // In a real app, you'd use something like react-native-image-picker
     Alert.alert(
       'Image Picker',
       'Mobile image picking not implemented. Please use web for testing or integrate a native image picker.',
@@ -78,13 +76,14 @@ function ImageUploader({ onImageSelected }) {
   );
 }
 
-export default function ChatRoom({ username, roomId }) {
+export default function ChatRoom({ route }) {
   const socketRef = useRef(null);
   const flatListRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
+  const { username, roomId, title, desc } = route.params;
 
   useEffect(() => {
     setIsConnecting(true);
@@ -98,7 +97,7 @@ export default function ChatRoom({ username, roomId }) {
       console.log('Connected to server');
       setIsConnected(true);
       setIsConnecting(false);
-      socketRef.current.emit('joinRoom', { username, roomId });
+      socketRef.current.emit('join_room', roomId); // Updated to match backend
     });
 
     socketRef.current.on('disconnect', (reason) => {
@@ -113,24 +112,12 @@ export default function ChatRoom({ username, roomId }) {
       setIsConnected(false);
     });
 
-    socketRef.current.on('chat message', (msg) => {
-      console.log('Received chat message from server:', msg);
+    socketRef.current.on('receive_message', (msg) => {
+      console.log('Received message:', msg);
       setMessages((prev) => {
         console.log('Current messages before update:', prev);
         return [msg, ...prev];
       });
-    });
-
-    socketRef.current.on('system message', (msg) => {
-      console.log('System message:', msg);
-      const systemMessage = {
-        id: `${Date.now()}-system`,
-        text: msg,
-        username: 'System',
-        createdAt: new Date().toISOString(),
-        isSystem: true,
-      };
-      setMessages((prev) => [systemMessage, ...prev]);
     });
 
     socketRef.current.on('previous messages', (msgs) => {
@@ -148,7 +135,7 @@ export default function ChatRoom({ username, roomId }) {
         socketRef.current.disconnect();
       }
     };
-  }, [username, roomId]);
+  }, [roomId]);
 
   useEffect(() => {
     if (messages.length > 0 && flatListRef.current) {
@@ -160,23 +147,26 @@ export default function ChatRoom({ username, roomId }) {
 
   const sendMessage = (imageData = null) => {
     if (!isConnected || isConnecting) return;
-
     if (!text.trim() && !imageData) return;
 
     const messageData = {
       text: text.trim(),
       image: imageData,
-      username,
+      sender: username || 'Guest',
       roomId,
-      id: `${Date.now()}-${username}`,
-      createdAt: new Date().toISOString(),
+      time: new Date().toISOString(),
     };
 
-    setMessages((prev) => [messageData, ...prev]);
-    console.log('Added optimistic update:', messageData);
+    // Remove optimistic update - wait for server response
+    // setMessages((prev) => [messageData, ...prev]);
 
-    socketRef.current.emit('chat message', messageData, (ack) => {
+    console.log('Sending message:', messageData);
+
+    socketRef.current.emit('send_message', messageData, (ack) => {
       console.log('Server ACK:', ack);
+      if (ack && ack.error) {
+        Alert.alert('Error', 'Failed to send message');
+      }
     });
 
     setText('');
@@ -196,7 +186,7 @@ export default function ChatRoom({ username, roomId }) {
     <View
       style={[
         styles.msgBox,
-        item.username === username ? styles.myMsg : styles.theirMsg,
+        item.sender === username ? styles.myMsg : styles.theirMsg,
         item.isSystem && styles.systemMsg,
       ]}
     >
@@ -204,17 +194,17 @@ export default function ChatRoom({ username, roomId }) {
         <Text
           style={[
             styles.msgUser,
-            item.username === username && styles.myMsgUser,
+            item.sender === username && styles.myMsgUser,
           ]}
         >
-          {item.username}
+          {item.sender}
         </Text>
       )}
       {item.text && (
         <Text
           style={[
             styles.msgText,
-            item.username === username && styles.myMsgText,
+            item.sender === username && styles.myMsgText,
             item.isSystem && styles.systemMsgText,
           ]}
         >
@@ -229,7 +219,7 @@ export default function ChatRoom({ username, roomId }) {
         />
       )}
       <Text style={styles.msgTime}>
-        {new Date(item.createdAt).toLocaleTimeString([], {
+        {new Date(item.time).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
         })}
@@ -244,9 +234,11 @@ export default function ChatRoom({ username, roomId }) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Debate Topic</Text>
+        <Text style={styles.headerTitle}>
+          Debate Topic: {title || 'Untitled Debate'}
+        </Text>
         <Text style={styles.headerSubtitle}>
-          hi there you go here sadklfsdjklfwskdfhsdhf jksadfbsdbfsdfsdf askdbfsjkdf sdkljf b
+          {desc || 'No description available'}
         </Text>
       </View>
 
@@ -270,7 +262,7 @@ export default function ChatRoom({ username, roomId }) {
           ref={flatListRef}
           data={messages}
           inverted
-          keyExtractor={(item) => item.id?.toString()}
+          keyExtractor={(item) => item.id?.toString() || `${item.time}-${item.sender}`}
           renderItem={renderMessage}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>

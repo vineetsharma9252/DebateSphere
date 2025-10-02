@@ -37,7 +37,7 @@ function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <Stack.Navigator initialRouteName="DebatePage">
+        <Stack.Navigator initialRouteName="SignIn">
           <Stack.Screen
             name="SignIn"
             component={SignIn}

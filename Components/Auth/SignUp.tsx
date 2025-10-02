@@ -13,6 +13,11 @@ import {
 import Icon from "react-native-vector-icons/FontAwesome";
 import { useState } from 'react' ;
 import { styles }  from './SignIn.tsx' ;
+import axios from 'axios' ;
+import { useNavigation } from "@react-navigation/native";
+
+const BACKEND_URL = "https://debatesphere-11.onrender.com/signup" ;
+
 const SignUp = ()=>{
     const [username , setUsername] = useState("") ;
     const [email , setEmail] = useState("") ;
@@ -20,12 +25,33 @@ const SignUp = ()=>{
     const [confirmPassword , setConfirmPassword] = useState("") ;
 
 
-    const handleSignUp = ()=>{
 
+
+
+    const handleSignUp = async ()=>{
+    console.log("yes it is working ")
     if (password !== confirmPassword){
         alert("password does not match") ;
         }
+    const response =  await axios.post(BACKEND_URL, {username,email , password}) ;
+    console.log(response)
+    if (response.status === 201){
 
+    alert("user created Successfully") ;
+    console.log("user Created")
+    navigation.navigate("SignIn") ;
+
+    }
+    else if (response.status === 400){
+
+        alert(`Missing Field Error and Fields are ${username}, ${email}, ${password}`);
+
+        }
+    else{
+        console.log("Something went wrong ")
+    alert("user not created , Something Went Wrong");
+
+    }
     }
     return (
         <View style={styles.container}>

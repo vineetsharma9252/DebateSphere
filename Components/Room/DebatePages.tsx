@@ -14,9 +14,7 @@ export default function DebatePage({ topic, username }) {
   const navigation = useNavigation();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTopic, setSelectedTopic] = useState(topic || 'Politics'); // Default to 'Politics' if topic is undefined
-
-  // Arbitrary topics for fallback
+  const [selectedTopic, setSelectedTopic] = useState(topic || 'Politics');
   const arbitraryTopics = ['Politics', 'Technology', 'Environment', 'Sports', 'Education', 'Health'];
 
   useEffect(() => {
@@ -43,20 +41,22 @@ export default function DebatePage({ topic, username }) {
     }
   };
 
-  const handleJoinRoom = (roomId) => {
-    navigation.navigate('ChatRoom', { username, roomId });
-  };
-
-  const handleTopicSelect = (newTopic) => {
-    setSelectedTopic(newTopic);
+  const handleJoinRoom = (roomId, title, desc) => {
+    navigation.navigate('ChatRoom', {
+      username: username || 'Guest',
+      roomId,
+      title,
+      desc,
+    });
   };
 
   const renderRoom = ({ item }) => (
     <TouchableOpacity
       style={styles.roomItem}
-      onPress={() => handleJoinRoom(item.roomId)}
+      onPress={() => handleJoinRoom(item.roomId, item.title, item.desc)}
     >
       <Text style={styles.roomTitle}>{item.title}</Text>
+      <Text style={styles.roomDesc}>{item.desc || 'No description'}</Text>
       <Text style={styles.roomId}>Room ID: {item.roomId}</Text>
       <Text style={styles.roomTime}>
         Created: {new Date(item.createdAt).toLocaleDateString()}
@@ -70,7 +70,7 @@ export default function DebatePage({ topic, username }) {
         styles.topicButton,
         selectedTopic === item && styles.topicButtonSelected,
       ]}
-      onPress={() => handleTopicSelect(item)}
+      onPress={() => setSelectedTopic(item)}
     >
       <Text
         style={[
@@ -86,9 +86,7 @@ export default function DebatePage({ topic, username }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          {selectedTopic} Debates
-        </Text>
+        <Text style={styles.headerTitle}>{selectedTopic} Debates</Text>
       </View>
       {!topic && (
         <View style={styles.topicListContainer}>
@@ -198,6 +196,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#000',
+  },
+  roomDesc: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
   },
   roomId: {
     fontSize: 14,
