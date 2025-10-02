@@ -7,7 +7,7 @@ import user from "./models/Users.js"; // Your Mongoose model
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import Room from "./models/Room.js" ;
-
+import User from "./models/Users.js";
 dotenv.config(); // Loads variables from .env into process.env
 
 // Connect to MongoDB
