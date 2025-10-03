@@ -195,6 +195,25 @@ app.get('/api/rooms', async (req, res) => {
   }
 });
 
+app.get('api/all_rooms' , async (req , res) => {
+
+    try{
+
+
+    const rooms = await Room.find();
+    res.json(rooms);
+    console.log("All room send successfully! ");
+
+
+    }
+    catch(err){
+
+    res.status(500).json({error:err.message}) ;
+
+    }
+
+}) ;
+
 // Health check route
 app.get("/", (req, res) => {
   res.send("Chat server is running");

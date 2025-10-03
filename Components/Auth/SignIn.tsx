@@ -88,7 +88,7 @@ const SignIn =({})=>{
                     <Text style={styles.buttonText}>SignIn</Text>
              </Pressable>
              <TouchableOpacity onPress={handleNewAccount}>
-             <Text style={styles.new_acc}> {"\n"}create new account</Text>
+             <Text style={styles.new_acc}>{"\n"}create new account</Text>
              </TouchableOpacity>
             </View>
             <View style={{flexDirection:"column" ,justifyContent:"center" ,alignItems:"center" ,marginTop:20}}>

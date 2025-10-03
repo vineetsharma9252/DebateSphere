@@ -9,11 +9,15 @@ import {
   Animated
 } from 'react-native';
 import Navbar from './Navbar';
-
+import axios from 'axios'
 const { width } = Dimensions.get('window');
+const BACKEND_URL  = "https://debatesphere-11.onrender.com/api/all_rooms"
+
 
 export default function Dashboard() {
 
+  const rooms = axios.get(BACKEND_URL)  ;
+  console.log(rooms) ;
 
   const data = [1, 2, 3, 4, 5 , 6 , 7 ];
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -57,7 +61,6 @@ export default function Dashboard() {
 
   return (
     <View style={styles.container}>
-      <Navbar />
 
       <ScrollView
         style={styles.scrollView}
