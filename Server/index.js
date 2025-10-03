@@ -195,7 +195,7 @@ app.get('/api/rooms', async (req, res) => {
   }
 });
 
-app.get('api/all_rooms' , async (req , res) => {
+app.get('/api/all_rooms' , async (req , res) => {
 
     try{
 
