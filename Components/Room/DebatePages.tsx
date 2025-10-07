@@ -7,15 +7,23 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
-export default function DebatePage({ topic, username }) {
+export default function DebatePage() {
   const navigation = useNavigation();
+  const route = useRoute();
+
+  // Always call hooks at the top level
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTopic, setSelectedTopic] = useState(topic || 'Politics');
-  const arbitraryTopics = ['Politics', 'Technology', 'Environment', 'Sports', 'Education', 'Health'];
+
+  // Get parameters from navigation and set initial state
+  const { topic: initialTopic, username } = route.params || {};
+  const [selectedTopic, setSelectedTopic] = useState(initialTopic || 'Politics');
+
+  const topics = ['Politics', 'Technology', 'Environment', 'Sports', 'Education', 'Health', 'All Topics'];
 
   useEffect(() => {
     fetchRooms();
@@ -24,10 +32,16 @@ export default function DebatePage({ topic, username }) {
   const fetchRooms = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://debatesphere-11.onrender.com/api/rooms?topic=${encodeURIComponent(selectedTopic)}`
-      );
+      let url = 'https://debatesphere-11.onrender.com/api/all_rooms';
+
+      // If a specific topic is selected and it's not "All Topics", filter by topic
+      if (selectedTopic && selectedTopic !== 'All Topics') {
+        url = `https://debatesphere-11.onrender.com/api/rooms?topic=${encodeURIComponent(selectedTopic)}`;
+      }
+
+      const response = await fetch(url);
       const data = await response.json();
+
       if (response.ok) {
         setRooms(data);
       } else {
@@ -57,10 +71,12 @@ export default function DebatePage({ topic, username }) {
     >
       <Text style={styles.roomTitle}>{item.title}</Text>
       <Text style={styles.roomDesc}>{item.desc || 'No description'}</Text>
-      <Text style={styles.roomId}>Room ID: {item.roomId}</Text>
-      <Text style={styles.roomTime}>
-        Created: {new Date(item.createdAt).toLocaleDateString()}
-      </Text>
+      <View style={styles.roomFooter}>
+        <Text style={styles.roomTopic}>Topic: {item.topic || 'General'}</Text>
+        <Text style={styles.roomTime}>
+          {new Date(item.createdAt).toLocaleDateString()}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 
@@ -83,41 +99,55 @@ export default function DebatePage({ topic, username }) {
     </TouchableOpacity>
   );
 
+  // Now use the initialTopic variable in the JSX (not in hooks)
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{selectedTopic} Debates</Text>
+        <Text style={styles.headerTitle}>
+          {selectedTopic === 'All Topics' ? 'All Debate Rooms' : `${selectedTopic} Debates`}
+        </Text>
+        {initialTopic && initialTopic !== selectedTopic && (
+          <Text style={styles.headerSubtitle}>
+            Navigated from: {initialTopic}
+          </Text>
+        )}
       </View>
-      {!topic && (
-        <View style={styles.topicListContainer}>
-          <Text style={styles.topicListTitle}>Select a Topic</Text>
-          <FlatList
-            data={arbitraryTopics}
-            renderItem={renderTopic}
-            keyExtractor={(item) => item}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.topicList}
-          />
-        </View>
-      )}
+
+      {/* Topic Filter */}
+      <View style={styles.topicListContainer}>
+        <Text style={styles.topicListTitle}>Filter by Topic</Text>
+        <FlatList
+          data={topics}
+          renderItem={renderTopic}
+          keyExtractor={(item) => item}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.topicList}
+        />
+      </View>
+
+      {/* Rooms List */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007aff" />
           <Text style={styles.loadingText}>Loading rooms...</Text>
         </View>
       ) : rooms.length === 0 ? (
-        <View style={styles.emptyContainer}>
+        <ScrollView contentContainerStyle={styles.emptyContainer}>
           <Text style={styles.emptyText}>
             No debate rooms found for {selectedTopic}
           </Text>
-        </View>
+          <Text style={styles.emptySubtext}>
+            Be the first to create a room for this topic!
+          </Text>
+        </ScrollView>
       ) : (
         <FlatList
           data={rooms}
           renderItem={renderRoom}
           keyExtractor={(item) => item.roomId}
           contentContainerStyle={styles.roomList}
+          showsVerticalScrollIndicator={false}
         />
       )}
     </View>
@@ -143,23 +173,33 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: 'serif',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#000',
     textAlign: 'center',
   },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
+  },
   topicListContainer: {
     paddingHorizontal: 10,
     paddingVertical: 10,
+    backgroundColor: '#fff',
+    marginHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 10,
   },
   topicListTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#000',
     marginBottom: 10,
   },
   topicList: {
-    paddingBottom: 10,
+    paddingBottom: 5,
   },
   topicButton: {
     backgroundColor: '#ddd',
@@ -172,7 +212,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#007aff',
   },
   topicText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#000',
   },
   topicTextSelected: {
@@ -180,6 +220,7 @@ const styles = StyleSheet.create({
   },
   roomList: {
     paddingHorizontal: 10,
+    paddingBottom: 20,
   },
   roomItem: {
     backgroundColor: '#fff',
@@ -196,21 +237,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#000',
+    marginBottom: 5,
   },
   roomDesc: {
     fontSize: 14,
     color: '#666',
-    marginTop: 5,
+    marginBottom: 10,
   },
-  roomId: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
+  roomFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  roomTopic: {
+    fontSize: 12,
+    color: '#007aff',
+    fontWeight: '500',
   },
   roomTime: {
     fontSize: 12,
     color: '#999',
-    marginTop: 5,
   },
   loadingContainer: {
     flex: 1,
@@ -226,10 +272,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#999',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#666',
     textAlign: 'center',
   },
 });

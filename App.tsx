@@ -77,7 +77,7 @@ function App() {
                       component={DebatePageWrapper}
                       options={({ route }) => ({
                         title: `${route.params?.topic || 'Debates'} Debates`,
-                      }) ,{headerShown:false}}
+                      }) ,{headerShown:true}}
 
                     />
           <Stack.Screen
@@ -101,3 +101,6 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+
+
+// this is my App.tsx now implement the Custom Drawer here
