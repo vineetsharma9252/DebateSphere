@@ -215,7 +215,7 @@ app.put("/api/update_desc", async (req, res) => {
 }});
 
 
-app.get("/api/get_desc" , async (req, res)=>{
+app.post("/api/get_desc" , async (req, res)=>{
         const username = req.body.username ;
         try {
         const user = User.findOne({username});
