@@ -219,6 +219,7 @@ app.post("/api/get_desc" , async (req, res)=>{
         const username = req.body.username ;
         try {
         const user = User.findOne({username});
+        console.log(user) ;
         if (!user){
             return res.status(404).json({error: "User not found"})
         }
