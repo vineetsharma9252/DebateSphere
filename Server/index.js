@@ -195,6 +195,41 @@ app.get('/api/rooms', async (req, res) => {
   }
 });
 
+app.put("/api/update_desc", async (req, res) => {
+
+    const desc = req.body.desc;
+    const username = req.body.username;
+
+    try {
+        const user = await User.findOne({ username });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        user.desc = desc;
+        await user.save();
+        res.json({ message: "Description updated successfully" });
+    } catch (error) {
+        console.error("Error updating description:", error
+
+
+});
+
+
+app.get("/api/get_desc" , async (req, res)=>{
+        const username = req.body.username ;
+        try {
+        const user = User.findOne({username});
+        if (!user){
+            return res.status(404).json({error: "User not found"})
+        }
+        res.json({desc: user.desc});
+        }
+        catch(error){
+        console.error("Error getting description:", error);
+        }
+        }
+);
+
 app.get('/api/all_rooms' , async (req , res) => {
 
     try{

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef,useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -13,12 +13,29 @@ import {
 import { Divider } from "react-native-elements";
 import PropTypes from "prop-types";
 const { width } = Dimensions.get('window');
+import axios from 'axios' ;
+const BACKEND_URL = "https://debatesphere-11.onrender.com";
+
 
 export default function Profile() {
     const data = [1, 2];
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [desc  , setDesc] = useState("");
     const scrollX = useRef(new Animated.Value(0)).current;
+    const fetchDesc = async ()=>{
 
+        const response = await axios.get(BACKEND_URL+"/api/get_desc",{username});
+        setDesc(response.data);
+
+
+    }
+    useEffect(()=>{
+
+
+        fetchDesc() ;
+        },[])
+
+    console.log("Current Description is " + desc) ;
     const renderPagination = () => {
         return (
             <View style={styles.pagination}>
@@ -35,6 +52,13 @@ export default function Profile() {
         );
     };
 
+    const handleEditingDesc=  async ()=>{
+
+        const response = await axios.put(BACKEND_URL+"/api/update_desc",{username , desc});
+
+
+
+        }
     const renderSliderItem = ({ item, index }) => {
         const inputRange = [
             (index - 1) * width,
@@ -75,7 +99,7 @@ export default function Profile() {
             <View style={styles.image_block}>
                 <View style={styles.image_block_con}>
                     <Image
-                        source={require("../assets/My_photo.jpg")}
+                        source={require("../assets/Nerd_male_1.png")}
                         style={{height:140, width:110, borderWidth:4, borderColor:"white", borderRadius:50}}
                     />
                     <View style={{marginRight:200}}>
@@ -94,6 +118,11 @@ export default function Profile() {
                         <Text style={styles.descriptionText}>
                           Hi, this is Vineet Sharma. I am currently pursuing B.Tech in Computer Science and Engineering at NIT.
                         </Text>
+                      <View style={{ borderWidth:3 , borderColor:"white" , backgroundColor:"green",width:50, padding:2 , alignItems:"center", borderRadius:10, marginLeft:-5}}>
+                      <TouchableOpacity>
+                      <Text style={{color:"white"}} onclick={handleEditingDesc()}>Edit </Text>
+                      </TouchableOpacity>
+                      </View>
                       </View>
                     </View>
 
