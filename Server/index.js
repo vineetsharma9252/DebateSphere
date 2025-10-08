@@ -212,7 +212,7 @@ app.put("/api/update_desc", async (req, res) => {
         console.error("Error updating description:", error);
 
 
-});
+}});
 
 
 app.get("/api/get_desc" , async (req, res)=>{
