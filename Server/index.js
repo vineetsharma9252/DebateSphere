@@ -209,7 +209,7 @@ app.put("/api/update_desc", async (req, res) => {
         await user.save();
         res.json({ message: "Description updated successfully" });
     } catch (error) {
-        console.error("Error updating description:", error
+        console.error("Error updating description:", error);
 
 
 });
