@@ -222,8 +222,8 @@ app.get("/api/get_desc" , async (req, res)=>{
         if (!user){
             return res.status(404).json({error: "User not found"})
         }
-        const desc = user.desc ;
-        res.json({desc: user.desc},{message : "Description is "+desc});
+
+        res.json({desc: user.desc},{message : "Description is "+user.desc});
         }
         catch(error){
         console.error("Error getting description:", error);
