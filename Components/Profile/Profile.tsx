@@ -27,30 +27,19 @@ export default function Profile() {
     const [details , setDetails] = useState({}) ;
     const scrollX = useRef(new Animated.Value(0)).current;
     const { username, setUsername } = useUser();
-    const fetchDesc = async (username)=>{
-
-        const response = await axios.post(BACKEND_URL+"/api/get_desc",{username});
-
-        setDesc(response.data.desc);
-
-
-    }
     const fetchDetail = async (username)=>{
-
         const response = await axios.post(BACKEND_URL+"/api/get_details", {username});
-
-
+        console.log("Response is "+ response.data.user_data) ;
+        setDetails(response.data.user_data);
+        setDesc(response.data.user_data.desc);
+        console.log("Details are ", details);
         }
 useEffect(() => {
     if (username) {
-      fetchDesc(username);
+      fetchDetail(username);
     }
   }, [username]);
-    useEffect(()=>{
 
-
-        fetchDesc(username) ;
-        },[])
 
     console.log("Current Description is " + desc) ;
     const renderPagination = () => {
@@ -126,7 +115,7 @@ useEffect(() => {
                             <Text style={{fontSize:30, fontWeight:"bold"}}>{username}</Text>
                         </TouchableOpacity>
                         <Text>Debate Head</Text>
-                        <Text>#Rank - 234</Text>
+                        <Text>#Rank - {details.rank}</Text>
                     </View>
                 </View>
                 <ScrollView contentContainerStyle={{ width: "100%" }}>
