@@ -235,6 +235,40 @@ app.post("/api/get_details" , async(req, res)=>{
      }
 }) ;
 // PUT /api/update_user_image
+import multer from 'multer';
+import path from 'path';
+
+// Configure storage for uploaded files
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // Create this folder in your project root
+  },
+  filename: function (req, file, cb) {
+    // Create unique filename: profile_username_timestamp.jpg
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'profile_' + req.body.username + '_' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// File filter to only allow images
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only image files are allowed!'), false);
+  }
+};
+
+// Initialize multer
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+
 app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
   try {
     const { username } = req.body;
