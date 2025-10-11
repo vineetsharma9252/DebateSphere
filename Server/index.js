@@ -234,6 +234,32 @@ app.post("/api/get_details" , async(req, res)=>{
 
      }
 }) ;
+// PUT /api/update_user_image
+app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
+  try {
+    const { username } = req.body;
+    let user_image = '';
+
+    if (req.file) {
+      // Handle uploaded image - store the file path or URL
+      user_image = `/uploads/${req.file.filename}`; // or store in cloud storage
+    } else {
+      // Handle default image selection
+      user_image = req.body.user_image;
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { username },
+      { user_image },
+      { new: true }
+    );
+
+    res.json({ success: true, user: updatedUser });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.post("/api/get_desc" , async (req, res)=>{
         const username = req.body.username ;
         try {
