@@ -218,7 +218,7 @@ app.post("/api/get_details" , async(req, res)=>{
     const username = req.body.username ;
 
     if(!username){
-    res.status(400).json({error: "Username is required"});)
+    res.status(400).json({error: "Username is required"});
 
     }
      try{
