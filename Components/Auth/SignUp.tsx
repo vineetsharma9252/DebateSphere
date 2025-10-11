@@ -12,7 +12,7 @@ import {
     } from 'react-native' ;
 import Icon from "react-native-vector-icons/FontAwesome";
 import { useState } from 'react' ;
-import { styles }  from './SignIn.tsx' ;
+
 import axios from 'axios' ;
 import { useNavigation } from "@react-navigation/native";
 
@@ -119,7 +119,66 @@ catch(err){
         </View>
         )
     }
-
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: "#f0f0f0",
+        bottom: "40%",
+    },
+    container_2: {
+        position: "absolute",
+        top: "60%",
+        borderWidth: 1,
+        borderColor: "green",
+        height: 400,
+        width: 300,
+        borderRadius: 30,
+        padding: 25,
+        backgroundColor: "white",
+    },
+    input: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        borderRadius: 5,
+        padding: 10,
+        marginVertical: 5,
+        width: '100%',
+    },
+    label: {
+        fontSize: 20,
+    },
+    new_acc: {
+        textDecorationLine: "underline",
+        color: "blue",
+    },
+    button: {
+        padding: 12,
+        borderRadius: 8,
+        alignItems: "center",
+        flexDirection: "column",
+        backgroundColor: "#4CAF50",
+    },
+    buttonText: {
+        color: "white",
+        fontSize: 16,
+        fontWeight: "bold",
+    },
+    logo: {
+        width: 50,
+        height: 45,
+        marginRight: 8,
+    },
+    title: {
+        fontSize: 30,
+        fontFamily: "Roboto",
+        height: 50,
+        borderRadius: 15,
+        padding: 5,
+        margin: 10,
+    },
+});
 
 
 export default SignUp ;

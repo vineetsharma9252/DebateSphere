@@ -8,31 +8,48 @@ import {
   ScrollView,
   Animated,
   Image,
-  TouchableOpacity
+  TouchableOpacity,
+  TextInput
 } from 'react-native';
 import { Divider } from "react-native-elements";
 import PropTypes from "prop-types";
 const { width } = Dimensions.get('window');
 import axios from 'axios' ;
+import { useUser } from '../../Contexts/UserContext'
 const BACKEND_URL = "https://debatesphere-11.onrender.com";
 
 
 export default function Profile() {
     const data = [1, 2];
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [edit , setEdit]= useState(false) ;
     const [desc  , setDesc] = useState("");
+    const [details , setDetails] = useState({}) ;
     const scrollX = useRef(new Animated.Value(0)).current;
-    const fetchDesc = async ()=>{
+    const { username, setUsername } = useUser();
+    const fetchDesc = async (username)=>{
 
-        const response = await axios.get(BACKEND_URL+"/api/get_desc",{username});
-        setDesc(response.data);
+        const response = await axios.post(BACKEND_URL+"/api/get_desc",{username});
+
+        setDesc(response.data.desc);
 
 
     }
+    const fetchDetail = async (username)=>{
+
+        const response = await axios.post(BACKEND_URL+"/api/get_details", {username});
+
+
+        }
+useEffect(() => {
+    if (username) {
+      fetchDesc(username);
+    }
+  }, [username]);
     useEffect(()=>{
 
 
-        fetchDesc() ;
+        fetchDesc(username) ;
         },[])
 
     console.log("Current Description is " + desc) ;
@@ -52,13 +69,15 @@ export default function Profile() {
         );
     };
 
-    const handleEditingDesc=  async ()=>{
-
-        const response = await axios.put(BACKEND_URL+"/api/update_desc",{username , desc});
-
-
-
-        }
+        const handleEditingDesc = async () => {
+            try {
+                await axios.put(BACKEND_URL + "/api/update_desc", { username, desc });
+                setEdit(false); // Make sure this is called after successful update
+                console.log("Description updated successfully");
+            } catch (error) {
+                console.error("Error updating description:", error);
+            }
+        };
     const renderSliderItem = ({ item, index }) => {
         const inputRange = [
             (index - 1) * width,
@@ -104,32 +123,49 @@ export default function Profile() {
                     />
                     <View style={{marginRight:200}}>
                         <TouchableOpacity>
-                            <Text style={{fontSize:30, fontWeight:"bold"}}>Vineet Sharma</Text>
+                            <Text style={{fontSize:30, fontWeight:"bold"}}>{username}</Text>
                         </TouchableOpacity>
                         <Text>Debate Head</Text>
                         <Text>#Rank - 234</Text>
                     </View>
                 </View>
-                <ScrollView>
+                <ScrollView contentContainerStyle={{ width: "100%" }}>
                     {/* Stats Section */}
                     <View style={styles.sectionContainer}>
                       <Text style={styles.sectionTitle}>Description</Text>
+
+                      // In the JSX return, replace the conditional edit section with:
                       <View style={styles.descriptionBox}>
-                        <Text style={styles.descriptionText}>
-                          Hi, this is Vineet Sharma. I am currently pursuing B.Tech in Computer Science and Engineering at NIT.
-                        </Text>
-                      <View style={{ borderWidth:3 , borderColor:"white" , backgroundColor:"green",width:50, padding:2 , alignItems:"center", borderRadius:10, marginLeft:-5}}>
-                      <TouchableOpacity>
-                      <Text style={{color:"white"}} onclick={handleEditingDesc()}>Edit </Text>
-                      </TouchableOpacity>
-                      </View>
+                          {edit ? (
+                              <Text>
+                                  <TextInput
+                                      style={styles.descriptionInput}
+                                      value={desc}
+                                      onChangeText={setDesc}
+                                      multiline
+                                      numberOfLines={4}
+                                  />
+                                  <View style={styles.editButtonContainer}>
+                                      <TouchableOpacity onPress={handleEditingDesc} style={styles.editButton}>
+                                          <Image source={require("../assets/right.png")} style={{height:25 , width:25,marginTop:6}}/>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity onPress={() => setEdit(false)} style={styles.cancelButton}>
+                                          <Image source={require("../assets/cancel.png")} style={{height:25 , width:25,marginTop:8}}/>
+                                      </TouchableOpacity>
+                                  </View>
+                              </Text>
+                          ) : (
+                              <Text>
+                                  <Text style={styles.descriptionText}>{desc || "No description available"}</Text>
+                                  <TouchableOpacity onPress={() => setEdit(true)} style={styles.editButton, {marginLeft:250}}>
+                                    <Image source={require("../assets/edit.png")} style={{height:18 , width:20,marginLeft:260,marginTop:10}} />
+                                  </TouchableOpacity>
+                              </Text>
+                          )}
                       </View>
                     </View>
-
-
-
-                    <View style={{ alignItems:"center", justifyContent:"center", flexDirection:"column", marginRight:100}}>
-                        <Text style={{fontSize:20, fontWeight:"bold"}}>{"\n"}📊 Stats</Text>
+                    <View style={{ alignItems:"left", justifyContent:"center", flexDirection:"column", marginRight:100}}>
+                        <Text style={{fontSize:20, fontWeight:"bold",marginLeft:20}}>{"\n"}📊 Stats</Text>
                         <View style={styles.statsContainer}>
                             <View style={styles.statItem}>
                                 <Text style={styles.statValue}>{stats.totalDebates}</Text>
@@ -334,34 +370,95 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     } ,
     sectionContainer: {
-      alignItems: "center",
-      justifyContent: "center",
-      marginVertical: 10,
-      width: "100%",
-    },
-    sectionTitle: {
-      fontSize: 20,
-      fontWeight: "bold",
-      marginBottom: 8,
-      marginRight:100
-    },
-    descriptionBox: {
-      backgroundColor: "white",
-      padding: 30,
-      borderRadius: 10,
-      marginRight:100,
-      width: "90%",
-      elevation: 2,
-      shadowColor: "#000",
-      shadowOpacity: 0.1,
-      shadowOffset: { width: 0, height: 2 },
-      shadowRadius: 4,
-    },
+            width: "100%", // Ensure it takes full width of parent
+            paddingHorizontal: 15, // Consistent padding
+            marginBottom: 20,
+            alignItems: "flex-start", // Align content to left to prevent overflow
+        },
+        sectionTitle: {
+            fontSize: 20,
+            fontWeight: "bold",
+            marginBottom: 12,
+            alignSelf: "flex-start", // Ensure title stays left-aligned
+        },
+        descriptionBox: {
+            backgroundColor: "white",
+            padding: 15,
+            borderRadius: 10,
+            width: "100%", // Force box to stay within parent bounds
+            elevation: 3,
+            shadowColor: "#000",
+            shadowOpacity: 0.1,
+            shadowOffset: { width: 0, height: 2 },
+            shadowRadius: 4,
+            alignSelf: "stretch", // Ensure it respects parent container width
+        },
     descriptionText: {
       fontSize: 16,
       color: "#333",
       lineHeight: 22,
       textAlign: "justify",
+      fontFamily:'serif',
+
+    },
+    sectionContainer: {
+        width: "100%",
+        paddingHorizontal: 15,  // ← Add proper padding
+        marginBottom: 20,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: "bold",
+        marginBottom: 12,
+        alignSelf: 'flex-start',  // ← Align to left
+    },
+    descriptionBox: {
+        backgroundColor: "white",
+        padding: 15,
+        borderRadius: 10,
+        width: "100%",
+        elevation: 3,
+        shadowColor: "#000",
+        shadowOpacity: 0.1,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 4,
+    },
+    descriptionViewMode: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    descriptionInput: {
+        fontSize: 16,
+        color: "#333",
+        lineHeight: 22,
+        textAlign: "left",
+        borderWidth: 1,
+        borderColor: "#ddd",
+        borderRadius: 5,
+        padding: 10,
+        marginBottom: 10,
+        minHeight: 100,
+        width: '100%',
+    },
+    editButtonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        gap: 20,
+
+    },
+    editButton: {
+        backgroundColor: "white",
+        width:30,
+        height:20,
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 10,
+
+    },
+    editIconButton: {
+        padding: 5,
+
     },
 
 });

@@ -16,7 +16,7 @@ import axios from 'axios';
 const { width } = Dimensions.get('window');
 const BACKEND_URL = "https://debatesphere-11.onrender.com/api/all_rooms";
 
-export default function Dashboard() {
+export default function Dashboard({username}) {
   const navigation = useNavigation();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,13 +45,13 @@ export default function Dashboard() {
   const handleTopicPress = (topic) => {
     navigation.navigate('DebatePage', {
       topic: topic,
-      username: 'User'
+      username: username
     });
   };
 
   const handleDebatePage = () => {
     navigation.navigate('DebatePage', {
-      username: 'User'
+      username: username
     });
   };
 

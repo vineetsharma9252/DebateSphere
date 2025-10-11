@@ -8,7 +8,8 @@ const userSchema = mongoose.Schema({
   rank : { type : Number, default:99999} ,
   created_at: { type: Date, default: Date.now },
   user_image : {type:String, default: ""},
-  desc : {type:String , default:"Hi there i am using Debate Sphere"}
+  desc : {type:String , default:"Hi there i am using Debate Sphere"},
+
 });
 
 const user = mongoose.model("User", userSchema);
