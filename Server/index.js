@@ -152,8 +152,7 @@ io.on("connection", (socket) => {
 
   // Handle message deletion
   socket.on("delete_message", async (data, callback) => {
-    const { messageId, roomId} = data;
-    const username  = "User" ;
+    const { messageId, roomId , username} = data;
     console.log(`🗑️ Delete request for message ${messageId} by ${username} in room ${roomId}`);
 
     try {
