@@ -152,8 +152,8 @@ io.on("connection", (socket) => {
 
   // Handle message deletion
   socket.on("delete_message", async (data, callback) => {
-    const { messageId, roomId, username } = data;
-
+    const { messageId, roomId} = data;
+    const username  = "User" ;
     console.log(`🗑️ Delete request for message ${messageId} by ${username} in room ${roomId}`);
 
     try {
@@ -167,7 +167,6 @@ io.on("connection", (socket) => {
 
       // Check if user is the sender (only allow users to delete their own messages)
       console.log("Message Sender is " + message.sender) ;
-      username = message.sender ;
       console.log("Username is " + username) ;
       if (message.sender !== username) {
         if (callback) callback({ success: false, error: "You can only delete your own messages" });
