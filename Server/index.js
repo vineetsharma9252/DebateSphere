@@ -166,6 +166,8 @@ io.on("connection", (socket) => {
       }
 
       // Check if user is the sender (only allow users to delete their own messages)
+      console.log("Message Sender is " + message.sender) ;
+      console.log("Username is " + username) ;
       if (message.sender !== username) {
         if (callback) callback({ success: false, error: "You can only delete your own messages" });
         return;
