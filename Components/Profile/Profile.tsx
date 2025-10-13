@@ -11,14 +11,31 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  Alert
+  Alert,
+  StatusBar
 } from 'react-native';
 import { Divider } from "react-native-elements";
 import PropTypes from "prop-types";
 const { width } = Dimensions.get('window');
 import axios from 'axios';
 import { useUser } from '../../Contexts/UserContext'
+
 const BACKEND_URL = "https://debatesphere-11.onrender.com";
+
+// Color palette matching your chatroom theme
+const COLORS = {
+  primary: '#667eea',
+  primaryLight: '#c7d2fe',
+  secondary: '#4b7bec',
+  background: '#f8fafc',
+  card: '#ffffff',
+  text: '#1e293b',
+  textLight: '#64748b',
+  accent: '#4ade80',
+  danger: '#ef4444',
+  warning: '#f59e0b',
+  success: '#10b981'
+};
 
 export default function Profile() {
     const data = [1, 2];
@@ -30,12 +47,17 @@ export default function Profile() {
     const scrollX = useRef(new Animated.Value(0)).current;
     const { username, setUsername } = useUser();
 
+    // Animation values
+    const fadeAnim = useState(new Animated.Value(0))[0];
+    const slideAnim = useState(new Animated.Value(20))[0];
+
     // Default images array
     const defaultImages = [
-        { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Nerd Male 1" },
-        { id: 'nerd_male_2', source: require("../assets/Nerd_male_2.png"), name: "Nerd Male 2" },
-        { id: 'nerd_female_1', source: require("../assets/Nerd_female.png"), name: "Nerd Female 1" },
-
+        { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Alex" },
+        { id: 'nerd_male_2', source: require("../assets/Nerd_male_2.png"), name: "James" },
+        { id: 'nerd_female_1', source: require("../assets/Nerd_female.png"), name: "Tina" },
+        { id: 'nerd_female_2', source: require("../assets/Nerd_female_2.png"), name: "Jasmine" },
+        { id: 'nerd_male_3', source: require("../assets/Nerd_male_3.png"), name: "John" },
     ];
 
     const fetchDetail = async (username) => {
@@ -49,10 +71,24 @@ export default function Profile() {
     useEffect(() => {
         if (username) {
             fetchDetail(username);
+            animateIn();
         }
     }, [username]);
 
-    console.log("Current Description is " + desc);
+    const animateIn = () => {
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 600,
+                useNativeDriver: true,
+            }),
+            Animated.timing(slideAnim, {
+                toValue: 0,
+                duration: 500,
+                useNativeDriver: true,
+            })
+        ]).start();
+    };
 
     // Function to get image source based on user_image string
     const getImageSource = () => {
@@ -99,7 +135,7 @@ export default function Profile() {
             visible={imageModalVisible}
             onRequestClose={() => setImageModalVisible(false)}
         >
-            <View style={styles.modalContainer}>
+            <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
                     <Text style={styles.modalTitle}>Choose Profile Image</Text>
 
@@ -115,21 +151,24 @@ export default function Profile() {
 
                     <Text style={styles.defaultImagesTitle}>Default Images</Text>
 
-                    <View style={styles.defaultImagesContainer}>
-                        {defaultImages.map((image) => (
+                    <FlatList
+                        data={defaultImages}
+                        numColumns={2}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => (
                             <TouchableOpacity
-                                key={image.id}
                                 style={styles.defaultImageItem}
-                                onPress={() => handleSelectDefaultImage(image)}
+                                onPress={() => handleSelectDefaultImage(item)}
                             >
                                 <Image
-                                    source={image.source}
+                                    source={item.source}
                                     style={styles.defaultImage}
                                 />
-                                <Text style={styles.defaultImageName}>{image.name}</Text>
+                                <Text style={styles.defaultImageName}>{item.name}</Text>
                             </TouchableOpacity>
-                        ))}
-                    </View>
+                        )}
+                        contentContainerStyle={styles.defaultImagesContainer}
+                    />
 
                     <TouchableOpacity
                         style={styles.cancelButton}
@@ -142,178 +181,251 @@ export default function Profile() {
         </Modal>
     );
 
-    const renderPagination = () => {
-        return (
-            <View style={styles.pagination}>
-                {data.map((_, index) => (
-                    <View
-                        key={index}
-                        style={[
-                            styles.paginationDot,
-                            index === currentIndex ? styles.paginationDotActive : styles.paginationDotInactive
-                        ]}
-                    />
-                ))}
-            </View>
-        );
-    };
-
     const handleEditingDesc = async () => {
         try {
             await axios.put(BACKEND_URL + "/api/update_desc", { username, desc });
             setEdit(false);
             console.log("Description updated successfully");
+            Alert.alert('Success', 'Description updated successfully!');
         } catch (error) {
             console.error("Error updating description:", error);
+            Alert.alert('Error', 'Failed to update description');
         }
-    };
-
-    const renderSliderItem = ({ item, index }) => {
-        const inputRange = [
-            (index - 1) * width,
-            index * width,
-            (index + 1) * width,
-        ];
-
-        const scale = scrollX.interpolate({
-            inputRange,
-            outputRange: [0.9, 1, 0.9],
-            extrapolate: 'clamp',
-        });
-
-        return (
-            <Animated.View style={[styles.sliderItem, { width, transform: [{ scale }] }]}>
-                <Text style={styles.sliderText}>🔥 Slider Item {item}</Text>
-            </Animated.View>
-        );
     };
 
     // Sample stats data
     const stats = {
-        totalDebates: details.total_debates,
-        debatesWon: details.debates_won,
-        winRate: details.debates_won / (details.total_debates + 1),
-        ranking: details.rank
+        totalDebates: details.total_debates || 0,
+        debatesWon: details.debates_won || 0,
+        winRate: ((details.debates_won || 0) / ((details.total_debates || 0) + 1) * 100).toFixed(1),
+        ranking: details.rank || 'N/A'
     };
 
     // Sample achievements data
     const achievements = [
-        { id: 1, title: "Novice Debater", description: "Participated in 5 debates", icon: "🏅" },
-        { id: 2, title: "Silver Tongue", description: "Won 10 debates", icon: "🎤" },
-        { id: 3, title: "Top Contender", description: "Reached top 10 ranking", icon: "🌟" }
+        { id: 1, title: "Novice Debater", description: "Participated in 5 debates", icon: "🏅", unlocked: true },
+        { id: 2, title: "Silver Tongue", description: "Won 10 debates", icon: "🎤", unlocked: stats.debatesWon >= 10 },
+        { id: 3, title: "Top Contender", description: "Reached top 10 ranking", icon: "🌟", unlocked: stats.ranking <= 10 && stats.ranking !== 'N/A' },
+        { id: 4, title: "Debate Master", description: "Win rate above 80%", icon: "👑", unlocked: parseFloat(stats.winRate) >= 80 }
+    ];
+
+    const recentActivities = [
+        { id: 1, type: 'debate', title: 'Politics Debate', result: 'Won', time: '2 hours ago' },
+        { id: 2, type: 'debate', title: 'Technology Discussion', result: 'Lost', time: '1 day ago' },
+        { id: 3, type: 'achievement', title: 'Novice Debater', result: 'Unlocked', time: '2 days ago' },
     ];
 
     return (
         <View style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
             {renderImageModal()}
-            <View style={styles.image_block}>
-                <View style={styles.image_block_con}>
-                    {/* Updated Image Section with Edit Functionality */}
-                    <TouchableOpacity onPress={() => setImageModalVisible(true)}>
-                        <Image
-                            source={getImageSource()}
-                            style={styles.profileImage}
-                        />
-                        <View style={styles.editImageOverlay}>
-                            <Text style={styles.editImageText}>✏️</Text>
-                        </View>
-                    </TouchableOpacity>
-                    <View style={{ marginRight: 200 }}>
-                        <TouchableOpacity>
-                            <Text style={{ fontSize: 30, fontWeight: "bold" }}>{username}</Text>
+
+            <ScrollView
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={false}
+            >
+                {/* Header Section */}
+                <Animated.View
+                    style={[
+                        styles.header,
+                        {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                        }
+                    ]}
+                >
+                    <View style={styles.profileHeader}>
+                        <TouchableOpacity
+                            onPress={() => setImageModalVisible(true)}
+                            style={styles.imageContainer}
+                        >
+                            <Image
+                                source={getImageSource()}
+                                style={styles.profileImage}
+                            />
+                            <View style={styles.editImageOverlay}>
+                                <Text style={styles.editImageText}>✏️</Text>
+                            </View>
                         </TouchableOpacity>
-                        <Text>Debate Head</Text>
-                        <Text>#Rank - {details.rank}</Text>
+
+                        <View style={styles.profileInfo}>
+                            <Text style={styles.username}>{username}</Text>
+                            <Text style={styles.userTitle}>Debate Enthusiast</Text>
+                            <View style={styles.rankContainer}>
+                                <Text style={styles.rankText}>Rank #{stats.ranking}</Text>
+                            </View>
+                        </View>
                     </View>
-                </View>
-                <ScrollView contentContainerStyle={{ width: "100%" }}>
-                    {/* Description Section - UNCHANGED */}
-                    <View style={styles.sectionContainer}>
-                        <Text style={styles.sectionTitle}>Description</Text>
-                        <View style={styles.descriptionBox}>
-                            {edit ? (
-                                <Text>
-                                    <TextInput
-                                        style={styles.descriptionInput}
-                                        value={desc}
-                                        onChangeText={setDesc}
-                                        multiline
-                                        numberOfLines={4}
-                                    />
-                                    <View style={styles.editButtonContainer}>
-                                        <TouchableOpacity onPress={handleEditingDesc} style={styles.editButton}>
-                                            <Image source={require("../assets/right.png")} style={{ height: 25, width: 25, marginTop: 6 }} />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => setEdit(false)} style={styles.cancelButton}>
-                                            <Image source={require("../assets/cancel.png")} style={{ height: 25, width: 25, marginTop: 8 }} />
-                                        </TouchableOpacity>
-                                    </View>
-                                </Text>
-                            ) : (
-                                <Text>
-                                    <Text style={styles.descriptionText}>{desc || "No description available"}</Text>
-                                    <TouchableOpacity onPress={() => setEdit(true)} style={styles.editButton, { marginLeft: 250 }}>
-                                        <Image source={require("../assets/edit.png")} style={{ height: 18, width: 20, marginLeft: 260, marginTop: 10 }} />
+                </Animated.View>
+
+                {/* Stats Section */}
+                <Animated.View
+                    style={[
+                        styles.sectionContainer,
+                        {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                        }
+                    ]}
+                >
+                    <Text style={styles.sectionTitle}>📊 Debate Statistics</Text>
+                    <View style={styles.statsGrid}>
+                        <View style={styles.statCard}>
+                            <Text style={styles.statValue}>{stats.totalDebates}</Text>
+                            <Text style={styles.statLabel}>Total Debates</Text>
+                        </View>
+                        <View style={styles.statCard}>
+                            <Text style={styles.statValue}>{stats.debatesWon}</Text>
+                            <Text style={styles.statLabel}>Wins</Text>
+                        </View>
+                        <View style={styles.statCard}>
+                            <Text style={styles.statValue}>{stats.winRate}%</Text>
+                            <Text style={styles.statLabel}>Win Rate</Text>
+                        </View>
+                        <View style={styles.statCard}>
+                            <Text style={styles.statValue}>#{stats.ranking}</Text>
+                            <Text style={styles.statLabel}>Ranking</Text>
+                        </View>
+                    </View>
+                </Animated.View>
+
+                {/* Description Section */}
+                <Animated.View
+                    style={[
+                        styles.sectionContainer,
+                        {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                        }
+                    ]}
+                >
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>📝 About Me</Text>
+                        {!edit && (
+                            <TouchableOpacity
+                                style={styles.editIconButton}
+                                onPress={() => setEdit(true)}
+                            >
+                                <Text style={styles.editIcon}>✏️</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    <View style={styles.descriptionBox}>
+                        {edit ? (
+                            <View>
+                                <TextInput
+                                    style={styles.descriptionInput}
+                                    value={desc}
+                                    onChangeText={setDesc}
+                                    multiline
+                                    numberOfLines={4}
+                                    placeholder="Tell us about yourself..."
+                                    placeholderTextColor={COLORS.textLight}
+                                />
+                                <View style={styles.editButtonContainer}>
+                                    <TouchableOpacity
+                                        style={[styles.actionButton, styles.saveButton]}
+                                        onPress={handleEditingDesc}
+                                    >
+                                        <Text style={styles.actionButtonText}>Save</Text>
                                     </TouchableOpacity>
-                                </Text>
-                            )}
-                        </View>
+                                    <TouchableOpacity
+                                        style={[styles.actionButton, styles.cancelEditButton]}
+                                        onPress={() => setEdit(false)}
+                                    >
+                                        <Text style={styles.actionButtonText}>Cancel</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ) : (
+                            <Text style={styles.descriptionText}>
+                                {desc || "No description available. Tap the edit icon to add one."}
+                            </Text>
+                        )}
                     </View>
+                </Animated.View>
 
-                    {/* ALL OTHER SECTIONS REMAIN EXACTLY THE SAME */}
-                    <View style={{ alignItems: "left", justifyContent: "center", flexDirection: "column", marginRight: 100 }}>
-                        <Text style={{ fontSize: 20, fontWeight: "bold", marginLeft: 20 }}>{"\n"}📊 Stats</Text>
-                        <View style={styles.statsContainer}>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statValue}>{stats.totalDebates}</Text>
-                                <Text style={styles.statLabel}>Total Debates</Text>
+                {/* Achievements Section */}
+                <Animated.View
+                    style={[
+                        styles.sectionContainer,
+                        {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                        }
+                    ]}
+                >
+                    <Text style={styles.sectionTitle}>🏆 Achievements</Text>
+                    <View style={styles.achievementsGrid}>
+                        {achievements.map((achievement) => (
+                            <View
+                                key={achievement.id}
+                                style={[
+                                    styles.achievementCard,
+                                    !achievement.unlocked && styles.achievementLocked
+                                ]}
+                            >
+                                <Text style={styles.achievementIcon}>{achievement.icon}</Text>
+                                <View style={styles.achievementInfo}>
+                                    <Text style={[
+                                        styles.achievementTitle,
+                                        !achievement.unlocked && styles.achievementTitleLocked
+                                    ]}>
+                                        {achievement.title}
+                                    </Text>
+                                    <Text style={styles.achievementDescription}>
+                                        {achievement.description}
+                                    </Text>
+                                </View>
+                                {!achievement.unlocked && (
+                                    <Text style={styles.lockedBadge}>🔒</Text>
+                                )}
                             </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statValue}>{stats.debatesWon}</Text>
-                                <Text style={styles.statLabel}>Debates Won</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statValue}>{stats.winRate}%</Text>
-                                <Text style={styles.statLabel}>Win Rate</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statValue}>#{stats.ranking}</Text>
-                                <Text style={styles.statLabel}>Ranking</Text>
-                            </View>
-                        </View>
+                        ))}
                     </View>
+                </Animated.View>
 
-                    <View style={{ alignItems: "center", justifyContent: "center", flexDirection: "column", marginRight: 100 }}>
-                        <Text style={{ fontSize: 20, fontWeight: "bold" }}>{"\n"}🔥 Debate History</Text>
-                        <View style={{ flexDirection: "column", justifyContent: "space-evenly", alignItems: "center" }}>
-                            <View style={styles.feedContainer}>
-                                {data.map((item) => (
-                                    <View key={item} style={styles.feedItem}>
-                                        <Text style={styles.feedText}>🗣️ Feed Item {item}</Text>
-                                    </View>
-                                ))}
+                {/* Recent Activity */}
+                <Animated.View
+                    style={[
+                        styles.sectionContainer,
+                        {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                        }
+                    ]}
+                >
+                    <Text style={styles.sectionTitle}>📈 Recent Activity</Text>
+                    <View style={styles.activityList}>
+                        {recentActivities.map((activity) => (
+                            <View key={activity.id} style={styles.activityItem}>
+                                <View style={[
+                                    styles.activityIcon,
+                                    activity.result === 'Won' && styles.activityWon,
+                                    activity.result === 'Lost' && styles.activityLost,
+                                    activity.type === 'achievement' && styles.activityAchievement
+                                ]}>
+                                    <Text style={styles.activityIconText}>
+                                        {activity.type === 'debate' ? '💬' : '🏆'}
+                                    </Text>
+                                </View>
+                                <View style={styles.activityInfo}>
+                                    <Text style={styles.activityTitle}>{activity.title}</Text>
+                                    <Text style={[
+                                        styles.activityResult,
+                                        activity.result === 'Won' && styles.resultWon,
+                                        activity.result === 'Lost' && styles.resultLost
+                                    ]}>
+                                        {activity.result}
+                                    </Text>
+                                </View>
+                                <Text style={styles.activityTime}>{activity.time}</Text>
                             </View>
-                        </View>
+                        ))}
                     </View>
-
-                    <View style={{ alignItems: "center", justifyContent: "center", flexDirection: "column", marginRight: 100 }}>
-                        <Text style={{ fontSize: 20, fontWeight: "bold" }}>{"\n"}🏆 Achievements</Text>
-                        <View style={{ flexDirection: "column", justifyContent: "space-evenly", alignItems: "center" }}>
-                            <View style={styles.achievementsContainer}>
-                                {achievements.map((achievement) => (
-                                    <View key={achievement.id} style={styles.achievementItem}>
-                                        <Text style={styles.achievementIcon}>{achievement.icon}</Text>
-                                        <View style={styles.achievementTextContainer}>
-                                            <Text style={styles.achievementTitle}>{achievement.title}</Text>
-                                            <Text style={styles.achievementDescription}>{achievement.description}</Text>
-                                        </View>
-                                    </View>
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-                </ScrollView>
-            </View>
+                </Animated.View>
+            </ScrollView>
         </View>
     );
 }
@@ -321,539 +433,383 @@ export default function Profile() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        justifyContent: 'top',
-        alignItems: 'center',
-        backgroundColor: '#f5f5f5'
+        backgroundColor: COLORS.background,
     },
-    image_block: {
+    scrollView: {
         flex: 1,
-        padding: 5,
-        alignItems: "center",
-        height: 400,
-        width: "100%",
-        borderWidth: 2,
-        borderColor: "white",
     },
-    image_block_con: {
-        borderColor: "green",
+    header: {
+        backgroundColor: COLORS.primary,
+        paddingTop: 60,
+        paddingBottom: 30,
+        paddingHorizontal: 24,
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 8,
+    },
+    profileHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    imageContainer: {
+        position: 'relative',
+    },
+    profileImage: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
         borderWidth: 4,
-        width: "100%",
-        height: 200,
-        alignItems: "center",
-        justifyContent: "space-evenly",
-        flexDirection: "row",
-        padding: 20,
-        gap: 90,
-        borderRadius: 20,
-        backgroundColor: "tomato",
-        elevation: 20,
+        borderColor: 'rgba(255,255,255,0.3)',
     },
-    feedContainer: {
-        paddingHorizontal: 100,
-        width: "100%",
-        flexDirection: "row",
-        flexWrap: "wrap",
-        justifyContent: "space-between",
-    },
-    feedItem: {
-        height: 200,
-        marginVertical: 8,
-        borderRadius: 10,
-        backgroundColor: 'white',
+    editImageOverlay: {
+        position: 'absolute',
+        bottom: 5,
+        right: 5,
+        backgroundColor: COLORS.primary,
+        borderRadius: 15,
+        width: 30,
+        height: 30,
         justifyContent: 'center',
         alignItems: 'center',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 4,
-        width: "200%",
+        borderWidth: 2,
+        borderColor: 'white',
     },
-    feedText: {
+    editImageText: {
+        color: 'white',
+        fontSize: 14,
+    },
+    profileInfo: {
+        flex: 1,
+        marginLeft: 20,
+    },
+    username: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: 'white',
+        marginBottom: 4,
+    },
+    userTitle: {
+        fontSize: 16,
+        color: 'rgba(255,255,255,0.8)',
+        marginBottom: 8,
+    },
+    rankContainer: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+        alignSelf: 'flex-start',
+    },
+    rankText: {
+        color: 'white',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    sectionContainer: {
+        paddingHorizontal: 24,
+        paddingVertical: 20,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.text,
+    },
+    editIconButton: {
+        padding: 8,
+    },
+    editIcon: {
         fontSize: 18,
-        fontWeight: '500',
     },
-    statsContainer: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        justifyContent: "space-around",
-        padding: 10,
-        width: "100%",
+    statsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
     },
-    statItem: {
-        alignItems: "center",
-        width: "45%",
-        marginVertical: 10,
-        backgroundColor: 'white',
-        padding: 15,
-        borderRadius: 10,
-        elevation: 2,
+    statCard: {
+        width: '48%',
+        backgroundColor: COLORS.card,
+        padding: 16,
+        borderRadius: 16,
+        alignItems: 'center',
+        marginBottom: 12,
         shadowColor: '#000',
-        shadowOpacity: 0.1,
         shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 4,
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
     },
     statValue: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#333',
+        color: COLORS.primary,
+        marginBottom: 4,
     },
     statLabel: {
-        fontSize: 16,
-        color: '#666',
-    },
-    achievementsContainer: {
-        width: "100%",
-        paddingHorizontal: 10,
-    },
-    achievementItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: 'white',
-        padding: 15,
-        borderRadius: 10,
-        marginVertical: 8,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 4,
-    },
-    achievementIcon: {
-        fontSize: 30,
-        marginRight: 10,
-    },
-    achievementTextContainer: {
-        flex: 1,
-    },
-    achievementTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    achievementDescription: {
         fontSize: 14,
-        color: '#666',
-    },
-    pagination: {
-        flexDirection: 'row',
-        position: 'absolute',
-        bottom: 10,
-        alignSelf: 'center',
-    },
-    paginationDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginHorizontal: 4,
-    },
-    paginationDotActive: {
-        backgroundColor: '#333',
-    },
-    paginationDotInactive: {
-        backgroundColor: '#ccc',
-    },
-    sliderItem: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: 200,
-        backgroundColor: 'white',
-        borderRadius: 10,
-        elevation: 2,
-    },
-    sliderText: {
-        fontSize: 20,
-        fontWeight: 'bold',
-    } ,
-    sectionContainer: {
-            width: "100%", // Ensure it takes full width of parent
-            paddingHorizontal: 15, // Consistent padding
-            marginBottom: 20,
-            alignItems: "flex-start", // Align content to left to prevent overflow
-        },
-        sectionTitle: {
-            fontSize: 20,
-            fontWeight: "bold",
-            marginBottom: 12,
-            alignSelf: "flex-start", // Ensure title stays left-aligned
-        },
-        descriptionBox: {
-            backgroundColor: "white",
-            padding: 15,
-            borderRadius: 10,
-            width: "100%", // Force box to stay within parent bounds
-            elevation: 3,
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: 2 },
-            shadowRadius: 4,
-            alignSelf: "stretch", // Ensure it respects parent container width
-        },
-    descriptionText: {
-      fontSize: 16,
-      color: "#333",
-      lineHeight: 22,
-      textAlign: "justify",
-      fontFamily:'serif',
-
-    },
-    sectionContainer: {
-        width: "100%",
-        paddingHorizontal: 15,  // ← Add proper padding
-        marginBottom: 20,
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: "bold",
-        marginBottom: 12,
-        alignSelf: 'flex-start',  // ← Align to left
+        color: COLORS.textLight,
+        fontWeight: '500',
     },
     descriptionBox: {
-        backgroundColor: "white",
-        padding: 15,
-        borderRadius: 10,
-        width: "100%",
-        elevation: 3,
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
+        backgroundColor: COLORS.card,
+        padding: 20,
+        borderRadius: 16,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 4,
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
     },
-    descriptionViewMode: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
+    descriptionText: {
+        fontSize: 16,
+        color: COLORS.text,
+        lineHeight: 22,
+        fontFamily: 'serif',
     },
     descriptionInput: {
         fontSize: 16,
-        color: "#333",
+        color: COLORS.text,
         lineHeight: 22,
-        textAlign: "left",
         borderWidth: 1,
-        borderColor: "#ddd",
-        borderRadius: 5,
-        padding: 10,
-        marginBottom: 10,
-        minHeight: 100,
-        width: '100%',
+        borderColor: COLORS.primaryLight,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16,
+        minHeight: 120,
+        backgroundColor: COLORS.background,
+        textAlignVertical: 'top',
     },
     editButtonContainer: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
-        gap: 20,
-
+        gap: 12,
     },
-    editButton: {
-        backgroundColor: "white",
-        width:30,
-        height:20,
-        paddingHorizontal: 5,
-        paddingVertical: 2,
-        borderRadius: 10,
-
+    actionButton: {
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 12,
+        minWidth: 80,
+        alignItems: 'center',
     },
-    editIconButton: {
-        padding: 5,
-
+    saveButton: {
+        backgroundColor: COLORS.primary,
     },
-    container: {
-            flex: 1,
-            justifyContent: 'top',
-            alignItems: 'center',
-            backgroundColor: '#f5f5f5'
-        },
-        image_block: {
-            flex: 1,
-            padding: 5,
-            alignItems: "center",
-            height: 400,
-            width: "100%",
-            borderWidth: 2,
-            borderColor: "white",
-        },
-        image_block_con: {
-            borderColor: "green",
-            borderWidth: 4,
-            width: "100%",
-            height: 200,
-            alignItems: "center",
-            justifyContent: "space-evenly",
-            flexDirection: "row",
-            padding: 20,
-            gap: 90,
-            borderRadius: 20,
-            backgroundColor: "tomato",
-            elevation: 20,
-        },
-        profileImage: {
-            height: 140,
-            width: 110,
-            borderWidth: 4,
-            borderColor: "white",
-            borderRadius: 50
-        },
-        editImageOverlay: {
-            position: 'absolute',
-            bottom: 5,
-            right: 5,
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            borderRadius: 15,
-            width: 30,
-            height: 30,
-            justifyContent: 'center',
-            alignItems: 'center',
-        },
-        editImageText: {
-            color: 'white',
-            fontSize: 16,
-        },
-        // Modal Styles (NEW)
-        modalContainer: {
-            flex: 1,
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-        },
-        modalContent: {
-            backgroundColor: 'white',
-            borderRadius: 20,
-            padding: 20,
-            width: '90%',
-            maxHeight: '80%',
-        },
-        modalTitle: {
-            fontSize: 20,
-            fontWeight: 'bold',
-            marginBottom: 20,
-            textAlign: 'center',
-        },
-        uploadButton: {
-            backgroundColor: '#007AFF',
-            padding: 15,
-            borderRadius: 10,
-            alignItems: 'center',
-            marginBottom: 20,
-        },
-        uploadButtonText: {
-            color: 'white',
-            fontSize: 16,
-            fontWeight: 'bold',
-        },
-        defaultImagesTitle: {
-            fontSize: 16,
-            fontWeight: 'bold',
-            marginBottom: 10,
-        },
-        defaultImagesContainer: {
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            justifyContent: 'space-between',
-            marginBottom: 20,
-        },
-        defaultImageItem: {
-            alignItems: 'center',
-            width: '48%',
-            marginBottom: 10,
-            padding: 10,
-            backgroundColor: '#f8f8f8',
-            borderRadius: 10,
-        },
-        defaultImage: {
-            width: 80,
-            height: 80,
-            borderRadius: 40,
-            marginBottom: 5,
-        },
-        defaultImageName: {
-            fontSize: 12,
-            textAlign: 'center',
-        },
-        cancelButton: {
-            backgroundColor: '#FF3B30',
-            padding: 15,
-            borderRadius: 10,
-            alignItems: 'center',
-        },
-        cancelButtonText: {
-            color: 'white',
-            fontSize: 16,
-            fontWeight: 'bold',
-        },
-        feedContainer: {
-            paddingHorizontal: 100,
-            width: "100%",
-            flexDirection: "row",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-        },
-        feedItem: {
-            height: 200,
-            marginVertical: 8,
-            borderRadius: 10,
-            backgroundColor: 'white',
-            justifyContent: 'center',
-            alignItems: 'center',
-            elevation: 2,
-            shadowColor: '#000',
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: 2 },
-            shadowRadius: 4,
-            width: "200%",
-        },
-        feedText: {
-            fontSize: 18,
-            fontWeight: '500',
-        },
-        statsContainer: {
-            flexDirection: "row",
-            flexWrap: "wrap",
-            justifyContent: "space-around",
-            padding: 10,
-            width: "100%",
-        },
-        statItem: {
-            alignItems: "center",
-            width: "45%",
-            marginVertical: 10,
-            backgroundColor: 'white',
-            padding: 15,
-            borderRadius: 10,
-            elevation: 2,
-            shadowColor: '#000',
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: 2 },
-            shadowRadius: 4,
-        },
-        statValue: {
-            fontSize: 24,
-            fontWeight: 'bold',
-            color: '#333',
-        },
-        statLabel: {
-            fontSize: 16,
-            color: '#666',
-        },
-        achievementsContainer: {
-            width: "100%",
-            paddingHorizontal: 10,
-        },
-        achievementItem: {
-            flexDirection: "row",
-            alignItems: "center",
-            backgroundColor: 'white',
-            padding: 15,
-            borderRadius: 10,
-            marginVertical: 8,
-            elevation: 2,
-            shadowColor: '#000',
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: 2 },
-            shadowRadius: 4,
-        },
-        achievementIcon: {
-            fontSize: 30,
-            marginRight: 10,
-        },
-        achievementTextContainer: {
-            flex: 1,
-        },
-        achievementTitle: {
-            fontSize: 18,
-            fontWeight: 'bold',
-        },
-        achievementDescription: {
-            fontSize: 14,
-            color: '#666',
-        },
-        pagination: {
-            flexDirection: 'row',
-            position: 'absolute',
-            bottom: 10,
-            alignSelf: 'center',
-        },
-        paginationDot: {
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            marginHorizontal: 4,
-        },
-        paginationDotActive: {
-            backgroundColor: '#333',
-        },
-        paginationDotInactive: {
-            backgroundColor: '#ccc',
-        },
-        sliderItem: {
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: 200,
-            backgroundColor: 'white',
-            borderRadius: 10,
-            elevation: 2,
-        },
-        sliderText: {
-            fontSize: 20,
-            fontWeight: 'bold',
-        },
-        sectionContainer: {
-            width: "100%",
-            paddingHorizontal: 15,
-            marginBottom: 20,
-        },
-        sectionTitle: {
-            fontSize: 20,
-            fontWeight: "bold",
-            marginBottom: 12,
-            alignSelf: 'flex-start',
-        },
-        descriptionBox: {
-            backgroundColor: "white",
-            padding: 15,
-            borderRadius: 10,
-            width: "100%",
-            elevation: 3,
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: 2 },
-            shadowRadius: 4,
-        },
-        descriptionText: {
-            fontSize: 16,
-            color: "#333",
-            lineHeight: 22,
-            textAlign: "justify",
-            fontFamily: 'serif',
-        },
-        descriptionInput: {
-            fontSize: 16,
-            color: "#333",
-            lineHeight: 22,
-            textAlign: "left",
-            borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 5,
-            padding: 10,
-            marginBottom: 10,
-            minHeight: 100,
-            width: '100%',
-        },
-        editButtonContainer: {
-            flexDirection: 'row',
-            justifyContent: 'flex-end',
-            gap: 20,
-        },
-        editButton: {
-            backgroundColor: "white",
-            width: 30,
-            height: 20,
-            paddingHorizontal: 5,
-            paddingVertical: 2,
-            borderRadius: 10,
-        },
-
-
+    cancelEditButton: {
+        backgroundColor: COLORS.textLight,
+    },
+    actionButtonText: {
+        color: 'white',
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    achievementsGrid: {
+        gap: 12,
+    },
+    achievementCard: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.card,
+        padding: 16,
+        borderRadius: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+    },
+    achievementLocked: {
+        opacity: 0.6,
+    },
+    achievementIcon: {
+        fontSize: 32,
+        marginRight: 16,
+    },
+    achievementInfo: {
+        flex: 1,
+    },
+    achievementTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        marginBottom: 4,
+    },
+    achievementTitleLocked: {
+        color: COLORS.textLight,
+    },
+    achievementDescription: {
+        fontSize: 14,
+        color: COLORS.textLight,
+    },
+    lockedBadge: {
+        fontSize: 16,
+    },
+    activityList: {
+        gap: 12,
+    },
+    activityItem: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.card,
+        padding: 16,
+        borderRadius: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+    },
+    activityIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: COLORS.primaryLight,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    activityWon: {
+        backgroundColor: '#dcfce7',
+    },
+    activityLost: {
+        backgroundColor: '#fef2f2',
+    },
+    activityAchievement: {
+        backgroundColor: '#fef7cd',
+    },
+    activityIconText: {
+        fontSize: 18,
+    },
+    activityInfo: {
+        flex: 1,
+    },
+    activityTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.text,
+        marginBottom: 4,
+    },
+    activityResult: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    resultWon: {
+        color: COLORS.success,
+    },
+    resultLost: {
+        color: COLORS.danger,
+    },
+    activityTime: {
+        fontSize: 12,
+        color: COLORS.textLight,
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: COLORS.card,
+        borderRadius: 24,
+        padding: 24,
+        width: '100%',
+        maxHeight: '80%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        marginBottom: 20,
+        textAlign: 'center',
+    },
+    uploadButton: {
+        backgroundColor: COLORS.primary,
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginBottom: 20,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    uploadButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    defaultImagesTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        marginBottom: 16,
+    },
+    defaultImagesContainer: {
+        paddingBottom: 20,
+    },
+    defaultImageItem: {
+        width: '48%',
+        alignItems: 'center',
+        marginBottom: 16,
+        padding: 12,
+        backgroundColor: COLORS.background,
+        borderRadius: 16,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    defaultImage: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        marginBottom: 8,
+    },
+    defaultImageName: {
+        fontSize: 14,
+        color: COLORS.text,
+        fontWeight: '500',
+    },
+    cancelButton: {
+        backgroundColor: COLORS.textLight,
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    cancelButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
 });
 
 Profile.propTypes = {
     title: PropTypes.string.isRequired,
     participants: PropTypes.number,
 };
+
+export default Profile;

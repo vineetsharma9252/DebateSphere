@@ -8,7 +8,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
-  ActivityIndicator
+  ActivityIndicator,
+  StatusBar
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
@@ -16,15 +17,37 @@ import axios from 'axios';
 const { width } = Dimensions.get('window');
 const BACKEND_URL = "https://debatesphere-11.onrender.com/api/all_rooms";
 
-export default function Dashboard({username}) {
+// Color palette matching your chatroom
+const COLORS = {
+  primary: '#667eea',
+  primaryLight: '#c7d2fe',
+  secondary: '#4b7bec',
+  background: '#f8fafc',
+  card: '#ffffff',
+  text: '#1e293b',
+  textLight: '#64748b',
+  accent: '#4ade80',
+  danger: '#ef4444',
+  warning: '#f59e0b',
+  success: '#10b981'
+};
+
+// Popular topics with icons and solid colors
+const popularTopics = [
+  { name: "Politics", icon: "🏛️", color: '#667eea', lightColor: '#e0e7ff' },
+  { name: "Sports", icon: "⚽", color: '#4facfe', lightColor: '#dbeafe' },
+  { name: "Technology", icon: "💻", color: '#43e97b', lightColor: '#dcfce7' },
+  { name: "Environment", icon: "🌍", color: '#fa709a', lightColor: '#fce7f3' },
+  { name: "Health", icon: "🏥", color: '#ff9a9e', lightColor: '#fef7cd' },
+  { name: "Education", icon: "🎓", color: '#a8edea', lightColor: '#ecfdf5' },
+];
+
+export default function Dashboard({ username }) {
   const navigation = useNavigation();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
-
-  // Popular topics for the slider
-  const popularTopics = ["Politics", "Sports", "Technology", "Environment", "Health", "Education"];
 
   useEffect(() => {
     fetchAllRooms();
@@ -44,7 +67,7 @@ export default function Dashboard({username}) {
 
   const handleTopicPress = (topic) => {
     navigation.navigate('DebatePage', {
-      topic: topic,
+      topic: topic.name,
       username: username
     });
   };
@@ -64,15 +87,38 @@ export default function Dashboard({username}) {
 
     const scale = scrollX.interpolate({
       inputRange,
-      outputRange: [0.9, 1, 0.9],
+      outputRange: [0.85, 1, 0.85],
+      extrapolate: 'clamp',
+    });
+
+    const opacity = scrollX.interpolate({
+      inputRange,
+      outputRange: [0.6, 1, 0.6],
       extrapolate: 'clamp',
     });
 
     return (
-      <TouchableOpacity onPress={() => handleTopicPress(item)}>
-        <Animated.View style={[styles.sliderItem, { width, transform: [{ scale }] }]}>
-          <Text style={styles.sliderText}>🔥 {item}</Text>
-          <Text style={styles.sliderSubtext}>Tap to explore debates</Text>
+      <TouchableOpacity onPress={() => handleTopicPress(item)} activeOpacity={0.9}>
+        <Animated.View
+          style={[
+            styles.sliderItem,
+            {
+              transform: [{ scale }],
+              opacity,
+              backgroundColor: item.color
+            }
+          ]}
+        >
+          <View style={styles.sliderContent}>
+            <View style={[styles.topicIconContainer, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Text style={styles.topicIcon}>{item.icon}</Text>
+            </View>
+            <Text style={styles.sliderText}>{item.name}</Text>
+            <Text style={styles.sliderSubtext}>Join the conversation</Text>
+            <View style={styles.exploreButton}>
+              <Text style={styles.exploreButtonText}>Explore →</Text>
+            </View>
+          </View>
         </Animated.View>
       </TouchableOpacity>
     );
@@ -81,79 +127,196 @@ export default function Dashboard({username}) {
   const renderPagination = () => {
     return (
       <View style={styles.pagination}>
-        {popularTopics.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.paginationDot,
-              index === currentIndex ? styles.paginationDotActive : styles.paginationDotInactive
-            ]}
-          />
-        ))}
+        {popularTopics.map((_, index) => {
+          const inputRange = [
+            (index - 1) * width,
+            index * width,
+            (index + 1) * width,
+          ];
+
+          const dotWidth = scrollX.interpolate({
+            inputRange,
+            outputRange: [8, 20, 8],
+            extrapolate: 'clamp',
+          });
+
+          const opacity = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.3, 1, 0.3],
+            extrapolate: 'clamp',
+          });
+
+          return (
+            <Animated.View
+              key={index}
+              style={[
+                styles.paginationDot,
+                { width: dotWidth, opacity }
+              ]}
+            />
+          );
+        })}
       </View>
     );
   };
 
-  const renderRoomItem = ({ item }) => (
+  const renderRoomItem = ({ item, index }) => (
     <TouchableOpacity
       style={styles.roomItem}
       onPress={() => navigation.navigate('ChatRoom', {
-        username: 'User',
+        username: username,
         roomId: item.roomId,
         title: item.title,
         desc: item.desc,
       })}
+      activeOpacity={0.8}
     >
-      <Text style={styles.roomTitle}>{item.title}</Text>
-      <Text style={styles.roomDesc}>{item.desc || 'No description available'}</Text>
-      <Text style={styles.roomTopic}>Topic: {item.topic || 'General'}</Text>
+      <View style={styles.roomHeader}>
+        <View style={styles.roomIcon}>
+          <Text style={styles.roomIconText}>💬</Text>
+        </View>
+        <View style={styles.roomInfo}>
+          <Text style={styles.roomTitle} numberOfLines={1}>{item.title}</Text>
+          <Text style={styles.roomTopic}>#{item.topic || 'General'}</Text>
+        </View>
+        <View style={styles.activeIndicator}>
+          <View style={styles.activeDot} />
+          <Text style={styles.activeText}>Live</Text>
+        </View>
+      </View>
+
+      <Text style={styles.roomDesc} numberOfLines={2}>
+        {item.desc || 'Join this engaging debate conversation'}
+      </Text>
+
+      <View style={styles.roomFooter}>
+        <View style={styles.participants}>
+          <Text style={styles.participantsText}>👥 12 debating</Text>
+        </View>
+        <View style={styles.joinButton}>
+          <Text style={styles.joinButtonText}>Join Debate</Text>
+        </View>
+      </View>
     </TouchableOpacity>
+  );
+
+  const StatCard = ({ icon, value, label, color = COLORS.primary }) => (
+    <View style={styles.statCard}>
+      <View style={[styles.statIconContainer, { backgroundColor: color }]}>
+        <Text style={styles.statIcon}>{icon}</Text>
+      </View>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
   );
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.sliderContainer}>
-          <Text style={styles.sectionTitle}>Popular Topics</Text>
-          <Animated.FlatList
-            data={popularTopics}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-              { useNativeDriver: false }
-            )}
-            onMomentumScrollEnd={(event) => {
-              const index = Math.round(event.nativeEvent.contentOffset.x / width);
-              setCurrentIndex(index);
-            }}
-            keyExtractor={(item) => item}
-            renderItem={renderSliderItem}
-          />
-          {renderPagination()}
+        {/* Header Section */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.username}>{username || 'Debater'}! 👋</Text>
+          </View>
+          <View style={styles.userAvatar}>
+            <Text style={styles.userAvatarText}>
+              {username?.charAt(0)?.toUpperCase() || 'D'}
+            </Text>
+          </View>
         </View>
 
-        <TouchableOpacity style={styles.browseButton} onPress={handleDebatePage}>
-          <Text style={styles.browseButtonText}>Browse All Debate Rooms</Text>
+        {/* Stats Section */}
+        <View style={styles.statsContainer}>
+          <StatCard icon="💬" value="24" label="Active Rooms" color={COLORS.primary} />
+          <StatCard icon="👥" value="156" label="Debaters" color={COLORS.success} />
+          <StatCard icon="🔥" value="89" label="Hot Topics" color={COLORS.warning} />
+        </View>
+
+        {/* Popular Topics Slider */}
+        <View style={styles.sliderSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🔥 Popular Topics</Text>
+            <Text style={styles.sectionSubtitle}>Trending right now</Text>
+          </View>
+
+          <View style={styles.sliderContainer}>
+            <Animated.FlatList
+              data={popularTopics}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+                { useNativeDriver: false }
+              )}
+              onMomentumScrollEnd={(event) => {
+                const index = Math.round(event.nativeEvent.contentOffset.x / (width - 60));
+                setCurrentIndex(index);
+              }}
+              keyExtractor={(item) => item.name}
+              renderItem={renderSliderItem}
+              snapToInterval={width - 60}
+              decelerationRate="fast"
+            />
+            {renderPagination()}
+          </View>
+        </View>
+
+        {/* Quick Action Button */}
+        <TouchableOpacity
+          style={styles.browseButton}
+          onPress={handleDebatePage}
+          activeOpacity={0.9}
+        >
+          <View style={styles.browseButtonContent}>
+            <Text style={styles.browseButtonText}>Browse All Debate Rooms</Text>
+            <Text style={styles.browseButtonSubtext}>Discover 100+ active debates</Text>
+            <View style={styles.browseButtonIcon}>
+              <Text style={styles.browseButtonIconText}>🎯</Text>
+            </View>
+          </View>
         </TouchableOpacity>
 
+        {/* Recent Debate Rooms */}
         <View style={styles.feedContainer}>
-          <Text style={styles.sectionTitle}>Recent Debate Rooms</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>💫 Recent Debate Rooms</Text>
+            <TouchableOpacity onPress={fetchAllRooms} style={styles.refreshButton}>
+              <Text style={styles.refreshText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+
           {loading ? (
-            <ActivityIndicator size="large" color="#4CAF50" />
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Loading debates...</Text>
+            </View>
           ) : rooms.length > 0 ? (
             <FlatList
-              data={rooms.slice(0, 5)}
+              data={rooms.slice(0, 6)}
               renderItem={renderRoomItem}
               keyExtractor={(item) => item.roomId}
               scrollEnabled={false}
+              contentContainerStyle={styles.roomsList}
             />
           ) : (
-            <Text style={styles.noRoomsText}>No active debate rooms found</Text>
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>💬</Text>
+              <Text style={styles.emptyTitle}>No active debates</Text>
+              <Text style={styles.emptySubtitle}>
+                Be the first to start a debate room!
+              </Text>
+              <TouchableOpacity style={styles.createRoomButton}>
+                <Text style={styles.createRoomButtonText}>Create Room</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </ScrollView>
@@ -164,114 +327,370 @@ export default function Dashboard({username}) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5'
+    backgroundColor: COLORS.background,
   },
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    paddingBottom: 30,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
+  },
+  welcomeText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    fontWeight: '500',
+  },
+  username: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginTop: 4,
+  },
+  userAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  userAvatarText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginBottom: 30,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    marginHorizontal: 6,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statIcon: {
+    fontSize: 18,
+    color: '#fff',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    textAlign: 'center',
+  },
+  sliderSection: {
+    marginBottom: 25,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginHorizontal: 15,
-    marginVertical: 10,
-    color: '#333',
+    color: COLORS.text,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  refreshButton: {
+    padding: 8,
+  },
+  refreshText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
   },
   sliderContainer: {
-    marginVertical: 10,
+    marginBottom: 10,
   },
   sliderItem: {
-    height: 200,
+    width: width - 120,
+    height: 180,
+    marginHorizontal: 10,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  sliderContent: {
+    flex: 1,
+    padding: 24,
     justifyContent: 'center',
     alignItems: 'flex-start',
-    backgroundColor: 'tomato',
-    borderRadius: 15,
-    borderColor: 'black',
-    borderWidth: 2,
-    marginHorizontal: 10,
-    padding: 20,
+  },
+  topicIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  topicIcon: {
+    fontSize: 24,
   },
   sliderText: {
     fontSize: 24,
-    color: '#fff',
     fontWeight: 'bold',
-    marginBottom: 5,
+    color: '#fff',
+    marginBottom: 8,
   },
   sliderSubtext: {
     fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    marginBottom: 16,
+  },
+  exploreButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  exploreButtonText: {
     color: '#fff',
-    opacity: 0.9,
+    fontWeight: '600',
+    fontSize: 14,
   },
   pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 20,
   },
   paginationDot: {
-    width: 8,
     height: 8,
     borderRadius: 4,
     marginHorizontal: 4,
-  },
-  paginationDotActive: {
-    backgroundColor: '#4CAF50',
-  },
-  paginationDotInactive: {
-    backgroundColor: '#ccc',
+    backgroundColor: COLORS.primary,
   },
   browseButton: {
-    backgroundColor: '#4CAF50',
-    marginHorizontal: 15,
-    marginVertical: 10,
-    padding: 15,
-    borderRadius: 10,
+    marginHorizontal: 24,
+    marginBottom: 30,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  browseButtonContent: {
+    padding: 24,
     alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
+    position: 'relative',
   },
   browseButtonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  browseButtonSubtext: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+  },
+  browseButtonIcon: {
+    position: 'absolute',
+    right: 20,
+    top: '50%',
+    marginTop: -15,
+  },
+  browseButtonIconText: {
+    fontSize: 24,
   },
   feedContainer: {
-    paddingHorizontal: 10,
-    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: COLORS.textLight,
+    fontSize: 14,
+  },
+  roomsList: {
+    paddingBottom: 10,
   },
   roomItem: {
-    backgroundColor: 'white',
-    padding: 15,
+    backgroundColor: COLORS.card,
+    padding: 20,
     marginVertical: 8,
-    borderRadius: 10,
-    elevation: 2,
+    borderRadius: 20,
     shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  roomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  roomIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  roomIconText: {
+    fontSize: 18,
+  },
+  roomInfo: {
+    flex: 1,
   },
   roomTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  roomDesc: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
+    color: COLORS.text,
+    marginBottom: 4,
   },
   roomTopic: {
     fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '500',
+    color: COLORS.primary,
+    fontWeight: '600',
   },
-  noRoomsText: {
+  activeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.accent,
+    marginRight: 4,
+  },
+  activeText: {
+    fontSize: 10,
+    color: '#166534',
+    fontWeight: '600',
+  },
+  roomDesc: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  roomFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  participants: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  participantsText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  joinButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  joinButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    marginHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: COLORS.textLight,
     textAlign: 'center',
-    color: '#666',
-    fontSize: 16,
-    marginTop: 20,
+    marginBottom: 20,
+  },
+  createRoomButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  createRoomButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
