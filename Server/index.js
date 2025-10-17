@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { Server } from "socket.io";
 import http from "http";
 import cors from "cors";
+import { OAuth2Client } from 'google-auth-library'
 import user from "./models/Users.js"; // Your Mongoose model
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
@@ -305,7 +306,6 @@ app.get('/api/online_users', (req, res) => {
     users: Array.from(onlineUsers.values())
   });
 });
-const { OAuth2Client } = require('google-auth-library');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
