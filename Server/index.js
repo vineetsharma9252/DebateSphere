@@ -305,7 +305,71 @@ app.get('/api/online_users', (req, res) => {
     users: Array.from(onlineUsers.values())
   });
 });
+const { OAuth2Client } = require('google-auth-library');
 
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+app.post('/auth/google', async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    // Check if user exists in your database
+    let user = await User.findOne({
+      $or: [{ email }, { googleId }]
+    });
+
+    if (!user) {
+      // Create new user
+      user = new User({
+        username: email.split('@')[0], // or generate a unique username
+        email,
+        googleId,
+        profilePicture: picture,
+        isVerified: true
+      });
+      await user.save();
+
+      return res.status(201).json({
+        message: 'User created successfully',
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          profilePicture: user.profilePicture
+        },
+        token: generateToken(user) // Your JWT token generation
+      });
+    } else {
+      // Update googleId if not present
+      if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save();
+      }
+
+      return res.status(200).json({
+        message: 'Login successful',
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          profilePicture: user.profilePicture
+        },
+        token: generateToken(user)
+      });
+    }
+  } catch (error) {
+    console.error('Google auth error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
+  }
+});
 // Get messages for a room (with deleted messages filtered or marked)
 app.get("/api/rooms/:roomId/messages", async (req, res) => {
   try {
