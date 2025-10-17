@@ -1,0 +1,135 @@
+{
+  roomId: "POL-2024-001",
+  topic: "Politics",
+  title: "2024 Presidential Election Debate",
+  desc: "Discuss the upcoming presidential election, candidates, and key issues affecting voters nationwide.",
+  isActive: true,
+  createdBy: "507f1f77bcf86cd799439011",
+  createdAt: new Date("2024-01-15T10:30:00Z")
+},
+{
+roomId: "TECH-2024-002",
+topic: "Technology",
+title: "AI Ethics and Future Implications",
+desc: "Debate the ethical considerations of artificial intelligence and its impact on society and employment.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439012",
+createdAt: new Date("2024-01-16T14:20:00Z")
+},
+{
+roomId: "ENV-2024-003",
+topic: "Environment",
+title: "Climate Change: Urgent Action vs Economic Impact",
+desc: "Discuss the balance between immediate climate action and potential economic consequences.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439013",
+createdAt: new Date("2024-01-17T09:15:00Z")
+},
+{
+roomId: "SPT-2024-004",
+topic: "Sports",
+title: "Modern Athletes: Role Models or Just Entertainers?",
+desc: "Debate the societal responsibilities and expectations of professional athletes in today's world.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439014",
+createdAt: new Date("2024-01-18T16:45:00Z")
+},
+{
+roomId: "HLTH-2024-005",
+topic: "Health",
+title: "Universal Healthcare: Right or Privilege?",
+desc: "Discuss the merits and challenges of implementing universal healthcare systems.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439015",
+createdAt: new Date("2024-01-19T11:30:00Z")
+},
+{
+roomId: "EDU-2024-006",
+topic: "Education",
+title: "Online Education: Revolution or Regression?",
+desc: "Debate the effectiveness and future of online learning compared to traditional classrooms.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439016",
+createdAt: new Date("2024-01-20T13:00:00Z")
+},
+{
+roomId: "POL-2024-007",
+topic: "Politics",
+title: "Foreign Policy: Intervention vs Isolation",
+desc: "Discuss the appropriate level of international involvement for nations in global conflicts.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439017",
+createdAt: new Date("2024-01-21T15:20:00Z")
+},
+{
+roomId: "TECH-2024-008",
+topic: "Technology",
+title: "Social Media: Connecting or Dividing Society?",
+desc: "Debate the overall impact of social media platforms on social cohesion and mental health.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439018",
+createdAt: new Date("2024-01-22T12:10:00Z")
+},
+{
+roomId: "ENV-2024-009",
+topic: "Environment",
+title: "Renewable Energy: Ready to Replace Fossil Fuels?",
+desc: "Discuss the feasibility and timeline for complete transition to renewable energy sources.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439019",
+createdAt: new Date("2024-01-23T17:30:00Z")
+},
+{
+roomId: "SPT-2024-010",
+topic: "Sports",
+title: "Esports: Real Sport or Just Gaming?",
+desc: "Debate whether competitive video gaming should be considered a legitimate sport.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439020",
+createdAt: new Date("2024-01-24T10:00:00Z")
+},
+{
+roomId: "HLTH-2024-011",
+topic: "Health",
+title: "Mental Health: Society's Responsibility or Individual?",
+desc: "Discuss the balance between societal support and personal responsibility in mental healthcare.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439021",
+createdAt: new Date("2024-01-25T14:50:00Z")
+},
+{
+roomId: "EDU-2024-012",
+topic: "Education",
+title: "Standardized Testing: Fair Assessment or Flawed System?",
+desc: "Debate the effectiveness and equity of standardized testing in education systems.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439022",
+createdAt: new Date("2024-01-26T11:15:00Z")
+},
+{
+roomId: "POL-2024-013",
+topic: "Politics",
+title: "Immigration Policies: Open Borders vs Strict Control",
+desc: "Discuss the ideal approach to immigration policy in modern nations.",
+isActive: false,
+createdBy: "507f1f77bcf86cd799439023",
+createdAt: new Date("2024-01-10T08:30:00Z")
+},
+{
+roomId: "TECH-2024-014",
+topic: "Technology",
+title: "Cryptocurrency: Financial Revolution or Speculative Bubble?",
+desc: "Debate the long-term viability and impact of cryptocurrencies on global finance.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439024",
+createdAt: new Date("2024-01-27T16:00:00Z")
+},
+{
+roomId: "ENV-2024-015",
+topic: "Environment",
+title: "Plastic Ban: Environmental Necessity or Economic Burden?",
+desc: "Discuss the implications of plastic bans on environment vs small businesses.",
+isActive: true,
+createdBy: "507f1f77bcf86cd799439025",
+createdAt: new Date("2024-01-28T13:45:00Z")
+}

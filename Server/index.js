@@ -29,7 +29,7 @@ const messageSchema = new mongoose.Schema({
 });
 
 const Message = mongoose.model("Message", messageSchema);
-
+const onlineUsers = new Map();
 // Setup Express
 const app = express();
 app.use(express.json());
@@ -219,6 +219,56 @@ io.on("connection", (socket) => {
     }
   });
 
+
+  socket.on('user_online', (userData) => {
+      const { username, userId } = userData;
+      onlineUsers.set(socket.id, { username, userId, socketId: socket.id, lastSeen: new Date() });
+
+      // Broadcast to all clients
+      io.emit('online_users_update', {
+        onlineCount: onlineUsers.size,
+        users: Array.from(onlineUsers.values())
+      });
+
+      console.log(`👤 ${username} is now online. Total online: ${onlineUsers.size}`);
+    });
+
+    // User joins a specific room
+    socket.on('join_debate_room', (roomId) => {
+      socket.join(roomId);
+      const user = onlineUsers.get(socket.id);
+      if (user) {
+        socket.to(roomId).emit('user_joined_room', {
+          username: user.username,
+          roomId: roomId
+        });
+      }
+    });
+
+    // Handle user disconnect
+    socket.on('disconnect', () => {
+      const user = onlineUsers.get(socket.id);
+      if (user) {
+        onlineUsers.delete(socket.id);
+        io.emit('online_users_update', {
+          onlineCount: onlineUsers.size,
+          users: Array.from(onlineUsers.values())
+        });
+        console.log(`🔴 ${user.username} disconnected. Total online: ${onlineUsers.size}`);
+      }
+    });
+
+    // Handle manual user offline
+    socket.on('user_offline', () => {
+      const user = onlineUsers.get(socket.id);
+      if (user) {
+        onlineUsers.delete(socket.id);
+        io.emit('online_users_update', {
+          onlineCount: onlineUsers.size,
+          users: Array.from(onlineUsers.values())
+        });
+      }
+    });
   // Handle message reporting
   socket.on("report_message", async (data, callback) => {
     const { messageId, roomId, reporter, reason } = data;
@@ -249,6 +299,12 @@ io.on("connection", (socket) => {
 });
 
 // REST API routes for message management
+app.get('/api/online_users', (req, res) => {
+  res.json({
+    onlineCount: onlineUsers.size,
+    users: Array.from(onlineUsers.values())
+  });
+});
 
 // Get messages for a room (with deleted messages filtered or marked)
 app.get("/api/rooms/:roomId/messages", async (req, res) => {
