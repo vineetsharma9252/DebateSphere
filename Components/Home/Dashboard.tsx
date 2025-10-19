@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
+import { useUser } from '../../Contexts/UserContext';
 
 const { width } = Dimensions.get('window');
 const BACKEND_URL = "https://debatesphere-11.onrender.com/api/all_rooms";
@@ -42,12 +43,16 @@ const popularTopics = [
   { name: "Education", icon: "🎓", color: '#a8edea', lightColor: '#ecfdf5' },
 ];
 
-export default function Dashboard({ username }) {
+export default function Dashboard() {
+  const { username } = useUser();
   const navigation = useNavigation();
   const [rooms, setRooms] = useState([]);
+  const [activeRooms, setActiveRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
+
+  console.log("Username at dashboard is " + username);
 
   useEffect(() => {
     fetchAllRooms();
@@ -57,7 +62,14 @@ export default function Dashboard({ username }) {
     try {
       setLoading(true);
       const response = await axios.get(BACKEND_URL);
-      setRooms(response.data);
+      const allRooms = response.data;
+      setRooms(allRooms);
+
+      // Filter only active rooms
+      const activeRoomsList = allRooms.filter(room => room.isActive === true);
+      setActiveRooms(activeRoomsList);
+
+      console.log(`Total rooms: ${allRooms.length}, Active rooms: ${activeRoomsList.length}`);
     } catch (error) {
       console.error('Error fetching rooms:', error);
     } finally {
@@ -181,7 +193,9 @@ export default function Dashboard({ username }) {
         </View>
         <View style={styles.activeIndicator}>
           <View style={styles.activeDot} />
-          <Text style={styles.activeText}>Live</Text>
+          <Text style={styles.activeText}>
+            {item.isActive ? 'Live' : 'Inactive'}
+          </Text>
         </View>
       </View>
 
@@ -193,8 +207,13 @@ export default function Dashboard({ username }) {
         <View style={styles.participants}>
           <Text style={styles.participantsText}>👥 12 debating</Text>
         </View>
-        <View style={styles.joinButton}>
-          <Text style={styles.joinButtonText}>Join Debate</Text>
+        <View style={[
+          styles.joinButton,
+          !item.isActive && styles.joinButtonDisabled
+        ]}>
+          <Text style={styles.joinButtonText}>
+            {item.isActive ? 'Join Debate' : 'Room Closed'}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -232,11 +251,26 @@ export default function Dashboard({ username }) {
           </View>
         </View>
 
-        {/* Stats Section */}
+        {/* Stats Section - Updated with active rooms count */}
         <View style={styles.statsContainer}>
-          <StatCard icon="💬" value="24" label="Active Rooms" color={COLORS.primary} />
-          <StatCard icon="👥" value="156" label="Debaters" color={COLORS.success} />
-          <StatCard icon="🔥" value="89" label="Hot Topics" color={COLORS.warning} />
+          <StatCard
+            icon="💬"
+            value={activeRooms.length.toString()}
+            label="Active Rooms"
+            color={COLORS.primary}
+          />
+          <StatCard
+            icon="👥"
+            value="156"
+            label="Debaters Online"
+            color={COLORS.success}
+          />
+          <StatCard
+            icon="🔥"
+            value={popularTopics.length.toString()}
+            label="Hot Topics"
+            color={COLORS.warning}
+          />
         </View>
 
         {/* Popular Topics Slider */}
@@ -277,17 +311,24 @@ export default function Dashboard({ username }) {
         >
           <View style={styles.browseButtonContent}>
             <Text style={styles.browseButtonText}>Browse All Debate Rooms</Text>
-            <Text style={styles.browseButtonSubtext}>Discover 100+ active debates</Text>
+            <Text style={styles.browseButtonSubtext}>
+              Discover {activeRooms.length}+ active debates
+            </Text>
             <View style={styles.browseButtonIcon}>
               <Text style={styles.browseButtonIconText}>🎯</Text>
             </View>
           </View>
         </TouchableOpacity>
 
-        {/* Recent Debate Rooms */}
+        {/* Active Debate Rooms Section */}
         <View style={styles.feedContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>💫 Recent Debate Rooms</Text>
+            <View>
+              <Text style={styles.sectionTitle}>💫 Active Debate Rooms</Text>
+              <Text style={styles.sectionSubtitle}>
+                {activeRooms.length} rooms currently active
+              </Text>
+            </View>
             <TouchableOpacity onPress={fetchAllRooms} style={styles.refreshButton}>
               <Text style={styles.refreshText}>Refresh</Text>
             </TouchableOpacity>
@@ -298,9 +339,9 @@ export default function Dashboard({ username }) {
               <ActivityIndicator size="large" color={COLORS.primary} />
               <Text style={styles.loadingText}>Loading debates...</Text>
             </View>
-          ) : rooms.length > 0 ? (
+          ) : activeRooms.length > 0 ? (
             <FlatList
-              data={rooms.slice(0, 6)}
+              data={activeRooms.slice(0, 6)} // Show first 6 active rooms
               renderItem={renderRoomItem}
               keyExtractor={(item) => item.roomId}
               scrollEnabled={false}
@@ -308,13 +349,16 @@ export default function Dashboard({ username }) {
             />
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyEmoji}>💬</Text>
-              <Text style={styles.emptyTitle}>No active debates</Text>
+              <Text style={styles.emptyEmoji}>💤</Text>
+              <Text style={styles.emptyTitle}>No Active Debate Rooms</Text>
               <Text style={styles.emptySubtitle}>
-                Be the first to start a debate room!
+                All debate rooms are currently inactive. Check back later!
               </Text>
-              <TouchableOpacity style={styles.createRoomButton}>
-                <Text style={styles.createRoomButtonText}>Create Room</Text>
+              <TouchableOpacity
+                style={styles.createRoomButton}
+                onPress={() => navigation.navigate('CreateRoom')} // You can add this navigation
+              >
+                <Text style={styles.createRoomButtonText}>Create New Room</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -421,7 +465,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 24,
     marginBottom: 16,
   },
@@ -433,6 +477,7 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 14,
     color: COLORS.textLight,
+    marginTop: 4,
   },
   refreshButton: {
     padding: 8,
@@ -649,6 +694,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
   },
+  joinButtonDisabled: {
+    backgroundColor: COLORS.textLight,
+  },
   joinButtonText: {
     color: '#fff',
     fontSize: 12,
@@ -681,6 +729,7 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: 'center',
     marginBottom: 20,
+    lineHeight: 20,
   },
   createRoomButton: {
     backgroundColor: COLORS.primary,

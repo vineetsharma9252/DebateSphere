@@ -10,8 +10,10 @@ import {
   ScrollView,
   Animated,
   StatusBar,
+  Modal
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import io from 'socket.io-client';
 
 // Color palette matching your chatroom theme
 const COLORS = {
@@ -30,7 +32,7 @@ const COLORS = {
   pink: '#ec4899',
   teal: '#14b8a6'
 };
-
+const SOCKET_URL = "https://debatesphere-11.onrender.com";
 const TOPICS = [
   { name: 'All Topics', icon: '🌐', color: COLORS.primary },
   { name: 'Politics', icon: '🗳️', color: '#667eea' },
@@ -44,10 +46,13 @@ const TOPICS = [
 export default function DebatePage() {
   const navigation = useNavigation();
   const route = useRoute();
-
+  const [showOnlineUsers, setShowOnlineUsers] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [socket, setSocket] = useState(null);
 
   const { topic: initialTopic, username } = route.params || {};
   const [selectedTopic, setSelectedTopic] = useState(initialTopic || 'All Topics');
@@ -57,9 +62,43 @@ export default function DebatePage() {
   const slideAnim = useState(new Animated.Value(50))[0];
 
   useEffect(() => {
+      initializeSocket();
     fetchRooms();
     animateIn();
+
+    return ()=>{
+        if(socket){
+            socket.disconnect();
+            }
+        }
   }, [selectedTopic]);
+
+  const initializeSocket = () => {
+      const newSocket = io(SOCKET_URL);
+      setSocket(newSocket);
+
+      newSocket.on('connect', () => {
+        console.log('Connected to server');
+        // Notify server that user is online
+        if (user) {
+          newSocket.emit('user_online', {
+            username: user.username,
+            userId: user.id
+          });
+        }
+      });
+
+      newSocket.on('online_users_update', (data) => {
+        setOnlineCount(data.onlineCount);
+        setOnlineUsers(data.users);
+      });
+
+      newSocket.on('disconnect', () => {
+        console.log('Disconnected from server');
+      });
+
+      return newSocket;
+    };
 
   const animateIn = () => {
     Animated.parallel([
@@ -105,6 +144,7 @@ export default function DebatePage() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchRooms();
+    fetchOnlineUsers();
   };
 
   const handleJoinRoom = (roomId, title, desc) => {
@@ -119,7 +159,51 @@ export default function DebatePage() {
   const handleCreateRoom = () => {
     Alert.alert('Coming Soon', 'Room creation feature will be available soon!');
   };
+    const renderOnlineUsersModal = () => (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={showOnlineUsers}
+          onRequestClose={() => setShowOnlineUsers(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Online Debaters</Text>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowOnlineUsers(false)}
+                >
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
 
+              <View style={styles.onlineStats}>
+                <Text style={styles.onlineCountText}>
+                  {onlineCount} users online
+                </Text>
+              </View>
+
+              <FlatList
+                data={onlineUsers}
+                keyExtractor={(item) => item.socketId}
+                renderItem={({ item }) => (
+                  <View style={styles.userItem}>
+                    <View style={styles.userAvatar}>
+                      <Text style={styles.userAvatarText}>
+                        {item.username?.charAt(0)?.toUpperCase() || 'U'}
+                      </Text>
+                    </View>
+                    <Text style={styles.userName}>{item.username}</Text>
+                    <View style={styles.onlineIndicator} />
+                  </View>
+                )}
+                contentContainerStyle={styles.usersList}
+              />
+            </View>
+          </View>
+        </Modal>
+      );
   const renderRoom = ({ item, index }) => (
     <Animated.View
       style={[
@@ -195,11 +279,85 @@ export default function DebatePage() {
       </Text>
     </TouchableOpacity>
   );
+  const renderHeader = () => (
+      <Animated.View
+        style={[
+          styles.header,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle}>
+              {selectedTopic === 'All Topics' ? 'All Debate Rooms' : `${selectedTopic} Debates`}
+            </Text>
+            <View style={styles.headerSubtitleContainer}>
+              <Text style={styles.headerSubtitle}>
+                {rooms.length} active rooms • {onlineCount} debaters online
+              </Text>
+              <View style={styles.liveIndicator}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
+            </View>
+          </View>
+          {initialTopic && initialTopic !== selectedTopic && (
+            <View style={styles.navigationBadge}>
+              <Text style={styles.navigationBadgeText}>
+                From: {initialTopic}
+              </Text>
+            </View>
+          )}
+        </View>
+      </Animated.View>
+    );
+    const renderStatsContainer = () => (
+
+       <View style={styles.statsContainer}>
+
+         <TouchableOpacity
+           style={styles.statItem}
+           onPress={() => setShowOnlineUsers(true)}
+           activeOpacity={0.7}
+         >
+           <View style={styles.statIcon}>
+             <Text style={styles.statIconText}>👥</Text>
+           </View>
+           <Text style={styles.statNumber}>{onlineCount}</Text>
+           <Text style={styles.statLabel}>Online Now</Text>
+           <Text style={styles.statSubtext}>Tap to view</Text>
+         </TouchableOpacity>
+
+         <View style={styles.statDivider} />
+
+         <View style={styles.statItem}>
+           <View style={styles.statIcon}>
+             <Text style={styles.statIconText}>💬</Text>
+           </View>
+           <Text style={styles.statNumber}>{rooms.length}</Text>
+           <Text style={styles.statLabel}>Active Rooms</Text>
+         </View>
+
+         <View style={styles.statDivider} />
+
+         <View style={styles.statItem}>
+           <View style={styles.statIcon}>
+             <Text style={styles.statIconText}>🔥</Text>
+           </View>
+           <Text style={styles.statNumber}>{TOPICS.length}</Text>
+           <Text style={styles.statLabel}>Topics</Text>
+         </View>
+       </View>
+     );
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
+      {renderOnlineUsersModal()}
       <Animated.View
         style={[
           styles.header,
@@ -242,23 +400,8 @@ export default function DebatePage() {
       </View>
 
       {/* Quick Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{rooms.length}</Text>
-          <Text style={styles.statLabel}>Active Rooms</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>156</Text>
-          <Text style={styles.statLabel}>Debaters Online</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>24</Text>
-          <Text style={styles.statLabel}>Topics</Text>
-        </View>
-      </View>
-
+//
+     {renderStatsContainer()}
       {/* Rooms List */}
       {loading ? (
         <View style={styles.loadingContainer}>

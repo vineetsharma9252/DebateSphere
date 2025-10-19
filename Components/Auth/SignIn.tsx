@@ -11,14 +11,28 @@ import {
     StatusBar,
     KeyboardAvoidingView,
     Platform,
-    ScrollView
+    ScrollView,
+    Alert
 } from 'react-native';
 import { useNavigation } from "@react-navigation/native";
 import axios from 'axios';
 import { useState, useEffect } from 'react'
 import { useUser } from '../../Contexts/UserContext';
+import {
+  GoogleSignin,
+  GoogleSigninButton,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 
 const BACKEND_URL = "https://debatesphere-11.onrender.com/login";
+const GOOGLE_AUTH_URL = "https://debatesphere-11.onrender.com/auth/google";
+
+// Configure Google Sign-In
+GoogleSignin.configure({
+  webClientId: '555564188297-qe9k1l1t0lvkm4sebgbtq8o51idtlnqk.apps.googleusercontent.com', // Get from Google Cloud Console
+  offlineAccess: true,
+  forceCodeForRefreshToken: true,
+});
 
 // Color palette matching your chatroom theme
 const COLORS = {
@@ -39,6 +53,7 @@ const SignIn = ({ }) => {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [googleLoading, setGoogleLoading] = useState(false);
     const [focusedInput, setFocusedInput] = useState(null);
     const navigation = useNavigation();
     const { login } = useUser();
@@ -84,7 +99,7 @@ const SignIn = ({ }) => {
 
         setIsLoading(true);
         try {
-            console.log("Username is " + username);
+            console.log("Username at SignIn is " + username);
             console.log("Password is " + password);
             const response = await axios.post(BACKEND_URL, { username, password });
 
@@ -93,7 +108,7 @@ const SignIn = ({ }) => {
                 login({ username: username });
 
                 // Navigate to Dashboard
-                navigation.navigate("Dashboard");
+                navigation.navigate("Dashboard", {username: username});
             } else {
                 alert("Something went wrong try again")
             }
@@ -105,9 +120,64 @@ const SignIn = ({ }) => {
         }
     }
 
-    const handleGoogleAuth = () => {
-        // Google auth implementation
-        alert("Google authentication coming soon!");
+    const handleGoogleAuth = async () => {
+        setGoogleLoading(true);
+        try {
+            await GoogleSignin.hasPlayServices();
+            const userInfo = await GoogleSignin.signIn();
+
+            // Send the ID token to your backend
+            const { idToken } = userInfo;
+
+            console.log('Sending Google auth request with ID token...');
+
+            const response = await axios.post(GOOGLE_AUTH_URL, {
+                idToken: idToken
+            });
+
+            console.log('Google auth response:', response.data);
+
+            if (response.status === 200 || response.status === 201) {
+                const { user } = response.data;
+
+                // Update the context with the logged-in user
+                login({
+                    username: user.username,
+                    email: user.email,
+                    profilePicture: user.profilePicture
+                });
+
+                // Navigate to Dashboard
+                navigation.navigate("Dashboard", { username: user.username });
+
+                Alert.alert("Success", "Google authentication successful!");
+            } else {
+                Alert.alert("Error", "Google authentication failed with status: " + response.status);
+            }
+        } catch (error) {
+            console.log("Google auth error:", error);
+
+            // More detailed error logging
+            if (error.response) {
+                console.log('Backend error response:', error.response.data);
+                Alert.alert(
+                    "Authentication Error",
+                    error.response.data.error || error.response.data.details || "Google authentication failed"
+                );
+            } else if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                // User cancelled the login flow
+                console.log('User cancelled Google sign in');
+            } else if (error.code === statusCodes.IN_PROGRESS) {
+                Alert.alert("In Progress", "Sign in is already in progress");
+            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                Alert.alert("Error", "Google Play Services not available");
+            } else {
+                console.log('Other error:', error);
+                Alert.alert("Error", "Google authentication failed. Please try again.");
+            }
+        } finally {
+            setGoogleLoading(false);
+        }
     }
 
     const handleForgotPassword = () => {
@@ -232,19 +302,21 @@ const SignIn = ({ }) => {
                         <View style={styles.dividerLine} />
                     </View>
 
-                    {/* Social Login */}
-                    <TouchableOpacity
-                        style={styles.googleButton}
-                        onPress={handleGoogleAuth}
-                    >
-                        <Image
-                            source={require("../assets/google.png")}
-                            style={styles.googleLogo}
+                    {/* Google Sign In Button */}
+                    <View style={styles.googleButtonContainer}>
+                        <GoogleSigninButton
+                            style={styles.googleButton}
+                            size={GoogleSigninButton.Size.Wide}
+                            color={GoogleSigninButton.Color.Dark}
+                            onPress={handleGoogleAuth}
+                            disabled={googleLoading}
                         />
-                        <Text style={styles.googleButtonText}>
-                            Sign in with Google
-                        </Text>
-                    </TouchableOpacity>
+                        {googleLoading && (
+                            <View style={styles.googleLoadingOverlay}>
+                                <Text style={styles.googleLoadingText}>Signing in...</Text>
+                            </View>
+                        )}
+                    </View>
 
                     {/* Sign Up Link */}
                     <View style={styles.signUpContainer}>
@@ -404,30 +476,27 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         marginHorizontal: 12,
     },
-    googleButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: COLORS.card,
-        borderWidth: 2,
-        borderColor: '#e2e8f0',
-        paddingVertical: 14,
-        borderRadius: 12,
+    googleButtonContainer: {
+        position: 'relative',
         marginBottom: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
     },
-    googleLogo: {
-        width: 20,
-        height: 20,
-        marginRight: 12,
+    googleButton: {
+        width: '100%',
+        height: 48,
     },
-    googleButtonText: {
+    googleLoadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 12,
+    },
+    googleLoadingText: {
         color: COLORS.text,
-        fontSize: 16,
         fontWeight: '600',
     },
     signUpContainer: {

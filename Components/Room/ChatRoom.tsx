@@ -16,6 +16,7 @@ import {
   Animated,
 } from 'react-native';
 import io from 'socket.io-client';
+import {useUser} from "../../Contexts/UserContext"
 import { useRoute } from '@react-navigation/native';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com/';
@@ -92,7 +93,8 @@ export default function ChatRoom({ route }) {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState(null);
-  const { username, roomId, title, desc } = route.params;
+  const { roomId, title, desc } = route.params;
+  const { username } = useUser();
   console.log("Username is " + username);
 
   // Animation values
@@ -213,7 +215,7 @@ export default function ChatRoom({ route }) {
   const sendMessage = (imageData = null) => {
     if (!isConnected || isConnecting) return;
     if (!text.trim() && !imageData) return;
-
+    console.log("Username is " + username) ;
     const messageData = {
       text: text.trim(),
       image: imageData,

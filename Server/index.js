@@ -30,6 +30,19 @@ const messageSchema = new mongoose.Schema({
   deletedBy: { type: String }, // Track who deleted the message
 });
 
+const generateToken = (user) => {
+  return jwt.sign(
+    {
+      userId: user._id,
+      username: user.username,
+      email: user.email
+    },
+    process.env.JWT_SECRET || 'your-fallback-secret-key-change-in-production',
+    { expiresIn: '7d' }
+  );
+};
+
+
 const Message = mongoose.model("Message", messageSchema);
 const onlineUsers = new Map();
 // Setup Express
@@ -321,16 +334,28 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 app.post('/auth/google', async (req, res) => {
   try {
     const { idToken } = req.body;
+    console.log('Received Google auth request');
 
+    if (!idToken) {
+      return res.status(400).json({ error: 'ID token is required' });
+    }
+
+    // Verify the Google ID token
     const ticket = await client.verifyIdToken({
-      idToken,
+      idToken: idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
 
     const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
 
-    // Check if user exists by googleId or email
+    console.log('Google auth payload:', { googleId, email, name });
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email not provided by Google' });
+    }
+
+    // Check if user exists in your database
     let user = await User.findOne({
       $or: [{ email }, { googleId }]
     });
@@ -340,20 +365,30 @@ app.post('/auth/google', async (req, res) => {
       let baseUsername = email.split('@')[0];
       let username = baseUsername;
       let counter = 1;
+
+      // Check if username exists, if yes, append a number
       while (await User.findOne({ username })) {
         username = `${baseUsername}${counter}`;
         counter++;
+        if (counter > 100) { // Safety limit
+          throw new Error('Could not generate unique username');
+        }
       }
 
-      // Create new user without password
+      // Create new user without password for Google auth
       user = new User({
-        username,
-        email,
-        googleId,
-        profilePicture: picture,
-        isVerified: true
+        username: username,
+        email: email,
+        googleId: googleId,
+        profilePicture: picture || '',
+        isVerified: true,
+        // Don't set password for Google users
       });
+
       await user.save();
+      console.log('New Google user created:', user.username);
+
+      const token = generateToken(user);
 
       return res.status(201).json({
         message: 'User created successfully',
@@ -362,7 +397,8 @@ app.post('/auth/google', async (req, res) => {
           username: user.username,
           email: user.email,
           profilePicture: user.profilePicture
-        }
+        },
+        token: token
       });
     } else {
       // Update googleId if not present
@@ -371,6 +407,14 @@ app.post('/auth/google', async (req, res) => {
         await user.save();
       }
 
+      // Update profile picture if empty and new picture is available
+      if ((!user.profilePicture || user.profilePicture === '') && picture) {
+        user.profilePicture = picture;
+        await user.save();
+      }
+
+      const token = generateToken(user);
+
       return res.status(200).json({
         message: 'Login successful',
         user: {
@@ -378,12 +422,21 @@ app.post('/auth/google', async (req, res) => {
           username: user.username,
           email: user.email,
           profilePicture: user.profilePicture
-        }
+        },
+        token: token
       });
     }
   } catch (error) {
     console.error('Google auth error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
+
+    if (error.message.includes('Token used too late')) {
+      return res.status(401).json({ error: 'Authentication token expired' });
+    }
+
+    res.status(401).json({
+      error: 'Authentication failed',
+      details: error.message
+    });
   }
 });
 

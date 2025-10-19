@@ -14,12 +14,17 @@ import {
     ScrollView,
     Alert
 } from 'react-native';
-import Icon from "react-native-vector-icons/FontAwesome";
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigation } from "@react-navigation/native";
+import {
+  GoogleSignin,
+  GoogleSigninButton,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 
 const BACKEND_URL = "https://debatesphere-11.onrender.com/signup";
+const GOOGLE_AUTH_URL = "https://debatesphere-11.onrender.com/auth/google";
 
 // Color palette matching your chatroom theme
 const COLORS = {
@@ -43,6 +48,7 @@ const SignUp = () => {
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [googleLoading, setGoogleLoading] = useState(false);
     const [focusedInput, setFocusedInput] = useState(null);
 
     // Animation values
@@ -137,6 +143,49 @@ const SignUp = () => {
         }
     }
 
+    const handleGoogleAuth = async () => {
+        setGoogleLoading(true);
+        try {
+            await GoogleSignin.hasPlayServices();
+            const userInfo = await GoogleSignin.signIn();
+
+            // Send the ID token to your backend
+            const { idToken } = userInfo;
+
+            const response = await axios.post(GOOGLE_AUTH_URL, {
+                idToken: idToken
+            });
+
+            if (response.status === 200 || response.status === 201) {
+                const { user, token } = response.data;
+
+                Alert.alert('Success', 'Account created successfully with Google!');
+
+                // Navigate to Dashboard directly since user is already logged in
+                navigation.navigate("Dashboard", { username: user.username });
+            } else {
+                Alert.alert("Error", "Google authentication failed");
+            }
+        } catch (error) {
+            console.log("Google auth error:", error);
+
+            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                // User cancelled the login flow
+            } else if (error.code === statusCodes.IN_PROGRESS) {
+                // Operation (e.g. sign in) is in progress already
+                Alert.alert("In Progress", "Sign in is already in progress");
+            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                // Play services not available or outdated
+                Alert.alert("Error", "Google Play Services not available");
+            } else {
+                // Some other error happened
+                Alert.alert("Error", "Google authentication failed. Please try again.");
+            }
+        } finally {
+            setGoogleLoading(false);
+        }
+    }
+
     return (
         <KeyboardAvoidingView
             style={styles.container}
@@ -182,6 +231,29 @@ const SignUp = () => {
                         }
                     ]}
                 >
+                    {/* Google Sign Up Button - Added at the top */}
+                    <View style={styles.googleButtonContainer}>
+                        <GoogleSigninButton
+                            style={styles.googleButton}
+                            size={GoogleSigninButton.Size.Wide}
+                            color={GoogleSigninButton.Color.Dark}
+                            onPress={handleGoogleAuth}
+                            disabled={googleLoading}
+                        />
+                        {googleLoading && (
+                            <View style={styles.googleLoadingOverlay}>
+                                <Text style={styles.googleLoadingText}>Signing up...</Text>
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Divider */}
+                    <View style={styles.dividerContainer}>
+                        <View style={styles.dividerLine} />
+                        <Text style={styles.dividerText}>or sign up with email</Text>
+                        <View style={styles.dividerLine} />
+                    </View>
+
                     {/* Username Input */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Username</Text>
@@ -365,6 +437,45 @@ const styles = StyleSheet.create({
         elevation: 8,
         borderWidth: 1,
         borderColor: '#f1f5f9',
+    },
+    googleButtonContainer: {
+        position: 'relative',
+        marginBottom: 24,
+    },
+    googleButton: {
+        width: '100%',
+        height: 48,
+    },
+    googleLoadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 12,
+    },
+    googleLoadingText: {
+        color: COLORS.text,
+        fontWeight: '600',
+    },
+    dividerContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: '#e2e8f0',
+    },
+    dividerText: {
+        color: COLORS.textLight,
+        fontSize: 14,
+        fontWeight: '500',
+        marginHorizontal: 12,
     },
     inputGroup: {
         marginBottom: 20,
