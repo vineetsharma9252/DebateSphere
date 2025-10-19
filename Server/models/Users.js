@@ -11,6 +11,9 @@ const userSchema = mongoose.Schema({
   desc : {type:String , default:"Hi there i am using Debate Sphere"},
   total_debates : {type : Number , default:0 } ,
   debates_won : {type:Number , default:0} ,
+  googleId: { type: String },
+  profilePicture: { type: String, default: "" },
+  isVerified: { type: Boolean, default: false }
 
 
 });

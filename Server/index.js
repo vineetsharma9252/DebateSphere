@@ -9,6 +9,7 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import Room from "./models/Room.js" ;
 import User from "./models/Users.js";
+import jwt from 'jsonwebtoken';
 dotenv.config(); // Loads variables from .env into process.env
 
 // Connect to MongoDB
@@ -309,6 +310,14 @@ app.get('/api/online_users', (req, res) => {
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+//const generateToken = (user) => {
+//  return jwt.sign(
+//    { userId: user._id, username: user.username },
+//    process.env.JWT_SECRET,
+//    { expiresIn: '7d' }
+//  );
+//};
+
 app.post('/auth/google', async (req, res) => {
   try {
     const { idToken } = req.body;
@@ -321,15 +330,24 @@ app.post('/auth/google', async (req, res) => {
     const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
 
-    // Check if user exists in your database
+    // Check if user exists by googleId or email
     let user = await User.findOne({
       $or: [{ email }, { googleId }]
     });
 
     if (!user) {
-      // Create new user
+      // Generate a unique username
+      let baseUsername = email.split('@')[0];
+      let username = baseUsername;
+      let counter = 1;
+      while (await User.findOne({ username })) {
+        username = `${baseUsername}${counter}`;
+        counter++;
+      }
+
+      // Create new user without password
       user = new User({
-        username: email.split('@')[0], // or generate a unique username
+        username,
         email,
         googleId,
         profilePicture: picture,
@@ -344,8 +362,7 @@ app.post('/auth/google', async (req, res) => {
           username: user.username,
           email: user.email,
           profilePicture: user.profilePicture
-        },
-        token: generateToken(user) // Your JWT token generation
+        }
       });
     } else {
       // Update googleId if not present
@@ -361,8 +378,7 @@ app.post('/auth/google', async (req, res) => {
           username: user.username,
           email: user.email,
           profilePicture: user.profilePicture
-        },
-        token: generateToken(user)
+        }
       });
     }
   } catch (error) {
@@ -370,6 +386,7 @@ app.post('/auth/google', async (req, res) => {
     res.status(401).json({ error: 'Authentication failed' });
   }
 });
+
 // Get messages for a room (with deleted messages filtered or marked)
 app.get("/api/rooms/:roomId/messages", async (req, res) => {
   try {
