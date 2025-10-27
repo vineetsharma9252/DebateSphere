@@ -7,13 +7,12 @@ import {
   Alert,
   TextInput,
   Image,
-  FlatList,
+  ScrollView,
   Modal,
-  Animated,
   StatusBar
 } from "react-native";
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { useNavigation } from '@react-navigation/native';
+import { useUser } from '../../Contexts/UserContext';
 import axios from 'axios';
 
 const BACKEND_URL = "https://debatesphere-11.onrender.com/api/all_rooms";
@@ -36,78 +35,112 @@ const COLORS = {
 export default function Navbar() {
   const navigation = useNavigation();
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
   const [allRooms, setAllRooms] = useState([]);
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [filteredRooms, setFilteredRooms] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userImage, setUserImage] = useState("");
+  const { username } = useUser();
 
-  // Animation values
-  const searchWidth = useState(new Animated.Value(200))[0];
-  const modalOpacity = useState(new Animated.Value(0))[0];
+  const defaultImages = [
+    { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Alex" },
+    { id: 'nerd_male_2', source: require("../assets/Nerd_male_2.png"), name: "James" },
+    { id: 'nerd_female_1', source: require("../assets/Nerd_female.png"), name: "Tina" },
+    { id: 'nerd_female_2', source: require("../assets/Nerd_female_2.png"), name: "Jasmine" },
+    { id: 'nerd_male_3', source: require("../assets/Nerd_male_3.png"), name: "John" },
+  ];
+
+  const getImageSource = () => {
+    if (!userImage) {
+      return defaultImages[0].source;
+    }
+    const defaultImage = defaultImages.find(img => img.id === userImage);
+    return defaultImage ? defaultImage.source : defaultImages[0].source;
+  };
 
   useEffect(() => {
     const fetchRooms = async () => {
       try {
+        setIsLoading(true);
         const response = await axios.get(BACKEND_URL);
-        const roomsData = response.data;
-        setAllRooms(roomsData);
-        console.log("Navbar all rooms:", roomsData);
+        console.log("Backend response:", {
+          status: response.status,
+          dataLength: response.data ? response.data.length : 'no data',
+          dataSample: response.data && response.data.length > 0 ? response.data[0] : 'no data'
+        });
+        if (response.data && Array.isArray(response.data)) {
+          const validRooms = response.data
+            .filter(room => room && (room.roomId || room._id) && room.title)
+            .sort((a, b) => {
+              if (a.isActive && !b.isActive) return -1;
+              if (!a.isActive && b.isActive) return 1;
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+          setAllRooms(validRooms);
+          setFilteredRooms(validRooms);
+          console.log("Loaded rooms:", validRooms.map(room => ({
+            roomId: room.roomId,
+            title: room.title,
+            topic: room.topic,
+            desc: room.desc,
+            isActive: room.isActive,
+            createdAt: room.createdAt
+          })));
+        } else {
+          setAllRooms([]);
+          setFilteredRooms([]);
+        }
       } catch (err) {
-        console.error("Error fetching rooms:", err);
+        console.error("Error fetching rooms:", err.message);
+        Alert.alert("Error", "Failed to load debate rooms. Please try again.");
+        setAllRooms([]);
+        setFilteredRooms([]);
+      } finally {
+        setIsLoading(false);
       }
     };
 
+    const fetchImage = async () => {
+      try {
+        const response = await axios.post("https://debatesphere-11.onrender.com/api/get_details", { username });
+        if (response.data && response.data.user_data) {
+          setUserImage(response.data.user_data.user_image);
+        }
+      } catch (error) {
+        console.error("Error fetching user image:", error);
+      }
+    };
+
+    if (username) {
+      fetchImage();
+    }
     fetchRooms();
-  }, []);
+  }, [username]);
 
   useEffect(() => {
-    if (search.trim().length > 0) {
-      setIsSearching(true);
-      const filteredRooms = allRooms.filter(room =>
-        room.title?.toLowerCase().includes(search.toLowerCase()) ||
-        room.topic?.toLowerCase().includes(search.toLowerCase()) ||
-        room.description?.toLowerCase().includes(search.toLowerCase())
-      );
-      setSearchResults(filteredRooms);
-      setShowSearchResults(true);
-    } else {
-      setSearchResults([]);
-      setShowSearchResults(false);
-      setIsSearching(false);
-    }
+    const searchTerm = search.toLowerCase().trim();
+    const results = allRooms
+      .filter(room => {
+        const title = room.title?.toLowerCase() || '';
+        const topic = room.topic?.toLowerCase() || '';
+        const desc = room.desc?.toLowerCase() || '';
+        return title.includes(searchTerm) || topic.includes(searchTerm) || desc.includes(searchTerm);
+      })
+      .sort((a, b) => {
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    setFilteredRooms(results);
+    console.log("Filtered rooms:", results.map(room => ({
+      roomId: room.roomId,
+      title: room.title,
+      topic: room.topic,
+      desc: room.desc,
+      isActive: room.isActive,
+      createdAt: room.createdAt
+    })));
   }, [search, allRooms]);
-
-  const animateSearchWidth = (toValue) => {
-    Animated.timing(searchWidth, {
-      toValue,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  };
-
-  const animateModal = (toValue) => {
-    Animated.timing(modalOpacity, {
-      toValue,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handleSearchFocus = () => {
-    setIsSearchFocused(true);
-    animateSearchWidth(280);
-    if (search.length > 0) {
-      setShowSearchResults(true);
-    }
-  };
-
-  const handleSearchBlur = () => {
-    setIsSearchFocused(false);
-    if (search.length === 0) {
-      animateSearchWidth(200);
-    }
-  };
 
   const handleMenuPress = () => {
     if (navigation.openDrawer) {
@@ -120,231 +153,164 @@ export default function Navbar() {
   const handleHomePress = () => {
     navigation.navigate('Home');
     setSearch("");
-    setShowSearchResults(false);
+    setShowModal(false);
   };
 
   const handleProfilePress = () => {
     navigation.navigate('Profile');
     setSearch("");
-    setShowSearchResults(false);
-  };
-
-  const handleSettingsPress = () => {
-    navigation.navigate('Settings');
-    setSearch("");
-    setShowSearchResults(false);
-  };
-
-  const handleDebatesPress = () => {
-    navigation.navigate('Debates');
-    setSearch("");
-    setShowSearchResults(false);
-  };
-
-  const handleLogoutPress = () => {
-    Alert.alert('Logout', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', onPress: () => navigation.navigate('Login') }
-    ]);
+    setShowModal(false);
   };
 
   const handleRoomPress = (room) => {
+    const roomId = room.roomId || room._id;
+    if (!roomId) {
+      Alert.alert("Error", "This room cannot be accessed");
+      return;
+    }
+
     navigation.navigate('ChatRoom', {
-      username: 'User', // You might want to pass actual username
-      roomId: room.roomId || room.id,
-      title: room.title,
-      desc: room.desc || room.description,
+      username: username || 'User',
+      roomId: roomId,
+      title: room.title || 'Untitled Room',
+      topic: room.topic || 'General',
+      desc: room.desc || 'Join the discussion!',
     });
+
     setSearch("");
-    setShowSearchResults(false);
-    animateModal(0);
+    setShowModal(false);
   };
 
-  const handleSearchIconPress = () => {
-    if (search.trim().length > 0) {
-      setShowSearchResults(true);
-      animateModal(1);
+  const openModal = () => {
+    if (!isLoading) {
+      setShowModal(true);
     }
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
   };
 
   const clearSearch = () => {
     setSearch("");
-    setShowSearchResults(false);
-    setIsSearching(false);
-    animateSearchWidth(200);
   };
 
-  const openSearchModal = () => {
-    setShowSearchResults(true);
-    animateModal(1);
+  const renderRoom = (room) => {
+    const title = room.title || 'Untitled';
+    const topic = room.topic || 'General';
+    const desc = room.desc || 'No description';
+    const active = room.isActive !== false;
+    const date = room.createdAt ? new Date(room.createdAt).toLocaleDateString() : '';
+
+    return (
+      <TouchableOpacity
+        key={room.roomId || room._id}
+        style={[styles.roomCard, !active && styles.roomCardInactive]}
+        onPress={() => handleRoomPress(room)}
+        disabled={!active}
+      >
+        <View style={[styles.badge, active ? styles.badgeActive : styles.badgeInactive]}>
+          <Text style={styles.badgeText}>{active ? 'Active' : 'Paused'}</Text>
+        </View>
+        <View style={styles.roomCardBody}>
+          <Text style={styles.roomCardTitle}>{title}</Text>
+          <Text style={styles.roomCardTopic}>#{topic}</Text>
+          <Text style={styles.roomCardDesc} numberOfLines={3}>{desc}</Text>
+          <Text style={styles.roomCardDate}>{date}</Text>
+        </View>
+        <Text style={styles.roomCardArrow}>→</Text>
+      </TouchableOpacity>
+    );
   };
 
-  const closeSearchModal = () => {
-    setShowSearchResults(false);
-    animateModal(0);
+  const renderEmpty = () => {
+    if (isLoading) {
+      return <Text style={styles.noResultsText}>Loading debates...</Text>;
+    }
+    return <Text style={styles.noResultsText}>No debates found</Text>;
   };
 
-  const renderRoomItem = ({ item, index }) => (
-    <TouchableOpacity
-      style={[
-        styles.roomItem,
-        index % 2 === 0 ? styles.roomItemEven : styles.roomItemOdd
-      ]}
-      onPress={() => handleRoomPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.roomIcon}>
-        <Text style={styles.roomIconText}>💬</Text>
-      </View>
-      <View style={styles.roomContent}>
-        <Text style={styles.roomTitle} numberOfLines={1}>
-          {item.title || 'Untitled Room'}
-        </Text>
-        {item.topic && (
-          <Text style={styles.roomTopic}>#{item.topic}</Text>
-        )}
-        {(item.description || item.desc) && (
-          <Text style={styles.roomDescription} numberOfLines={2}>
-            {item.description || item.desc}
-          </Text>
-        )}
-      </View>
-      <View style={styles.roomArrow}>
-        <Text style={styles.roomArrowText}>→</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  // Log filteredRooms when rendering modal
+  console.log("Rendering modal with filteredRooms:", filteredRooms.map(room => ({
+    roomId: room.roomId,
+    title: room.title,
+    topic: room.topic,
+    desc: room.desc,
+    isActive: room.isActive,
+    createdAt: room.createdAt
+  })));
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
       <View style={styles.navbar}>
-        {/* Left Section - Menu & Logo */}
         <View style={styles.leftSection}>
-          <TouchableOpacity
-            style={styles.navButton}
-            onPress={handleMenuPress}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.navButton} onPress={handleMenuPress}>
             <View style={styles.menuIcon}>
               <View style={styles.menuLine} />
               <View style={styles.menuLine} />
               <View style={styles.menuLine} />
             </View>
           </TouchableOpacity>
-
           <TouchableOpacity onPress={handleHomePress} style={styles.logoContainer}>
             <Text style={styles.logoIcon}>🏛️</Text>
-
           </TouchableOpacity>
         </View>
 
-        {/* Center Section - Search */}
         <View style={styles.centerSection}>
-          <Animated.View style={[styles.searchContainer, { width: searchWidth }]}>
+          <View style={styles.searchContainer}>
             <TextInput
-              style={[
-                styles.searchBar,
-                isSearchFocused && styles.searchBarFocused
-              ]}
-              placeholder="Search debates..."
+              style={styles.searchBar}
+              placeholder="Search debates or tap to browse..."
               placeholderTextColor={COLORS.textLight}
               value={search}
               onChangeText={setSearch}
-              onFocus={handleSearchFocus}
-              onBlur={handleSearchBlur}
+              onFocus={openModal}
+              returnKeyType="search"
+              editable={!isLoading}
             />
             {search.length > 0 ? (
               <TouchableOpacity style={styles.clearButton} onPress={clearSearch}>
                 <Text style={styles.clearText}>✕</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.searchIconButton} onPress={handleSearchIconPress}>
-                <Text style={styles.searchIcon}>🔍</Text>
+              <TouchableOpacity style={styles.searchIconButton} onPress={openModal} disabled={isLoading}>
+                <Text style={[styles.searchIcon, isLoading && { opacity: 0.5 }]}>🔍</Text>
               </TouchableOpacity>
             )}
-          </Animated.View>
+          </View>
         </View>
 
-        {/* Right Section - Profile */}
         <View style={styles.rightSection}>
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={handleProfilePress}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
             <View style={styles.profileIcon}>
-              <Text style={styles.profileIconText}>👤</Text>
+              <Image source={getImageSource()} style={styles.profileImage} resizeMode="cover" />
             </View>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search Results Modal */}
       <Modal
-        visible={showSearchResults}
-        animationType="fade"
+        visible={showModal}
         transparent={true}
-        onRequestClose={closeSearchModal}
-        statusBarTranslucent={true}
+        onRequestClose={closeModal}
       >
-        <Animated.View style={[styles.modalOverlay, { opacity: modalOpacity }]}>
-          <View style={styles.searchResultsContainer}>
-            {/* Header */}
+        <TouchableOpacity style={styles.modalOverlay} onPress={closeModal} activeOpacity={1}>
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <View style={styles.searchResultsHeader}>
-              <View>
-                <Text style={styles.searchResultsTitle}>
-                  {isSearching ? `Search Results` : 'All Debate Rooms'}
-                </Text>
-                <Text style={styles.searchResultsSubtitle}>
-                  {isSearching
-                    ? `${searchResults.length} debates found for "${search}"`
-                    : `${allRooms.length} total rooms available`
-                  }
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={closeSearchModal}
-                activeOpacity={0.7}
-              >
+              <Text style={styles.searchResultsTitle}>
+                {search ? 'Search Results' : 'All Debate Rooms'}
+              </Text>
+              <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Results List */}
-            {searchResults.length > 0 ? (
-              <FlatList
-                data={searchResults}
-                renderItem={renderRoomItem}
-                keyExtractor={(item, index) => item.roomId?.toString() || item.id?.toString() || index.toString()}
-                style={styles.resultsList}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.resultsListContent}
-              />
-            ) : search.length > 0 ? (
-              <View style={styles.noResults}>
-                <Text style={styles.noResultsEmoji}>🔍</Text>
-                <Text style={styles.noResultsTitle}>No debates found</Text>
-                <Text style={styles.noResultsText}>
-                  We couldn't find any debates matching "{search}"
-                </Text>
-                <TouchableOpacity style={styles.exploreButton} onPress={clearSearch}>
-                  <Text style={styles.exploreButtonText}>Explore All Debates</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.noResults}>
-                <Text style={styles.noResultsEmoji}>💬</Text>
-                <Text style={styles.noResultsTitle}>No rooms available</Text>
-                <Text style={styles.noResultsText}>
-                  There are no active debate rooms at the moment
-                </Text>
-              </View>
-            )}
+            <ScrollView style={styles.resultsList} contentContainerStyle={styles.resultsListContent}>
+              {filteredRooms.length > 0 ? filteredRooms.map(renderRoom) : renderEmpty()}
+            </ScrollView>
           </View>
-        </Animated.View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -397,23 +363,15 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
   logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 12,
+    marginLeft: 8,
   },
   logoIcon: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  logoText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 30,
   },
   searchContainer: {
-    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
+    width: '100%',
   },
   searchBar: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
@@ -425,10 +383,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     flex: 1,
-  },
-  searchBarFocused: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   clearButton: {
     position: 'absolute',
@@ -453,40 +407,43 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   profileIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  profileIconText: {
-    fontSize: 16,
+  profileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
-  // Search Results Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-start',
     paddingTop: 100,
   },
-  searchResultsContainer: {
+  modalContent: {
     backgroundColor: COLORS.background,
     marginHorizontal: 20,
     borderRadius: 20,
-    maxHeight: '70%',
+    minHeight: 200, // Ensure modal has enough space
+    maxHeight: '80%', // Increased to ensure visibility
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 10,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
   },
   searchResultsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
@@ -495,11 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 4,
-  },
-  searchResultsSubtitle: {
-    fontSize: 14,
-    color: COLORS.textLight,
   },
   closeButton: {
     width: 32,
@@ -515,95 +467,82 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   resultsList: {
-    maxHeight: '100%',
+    flexGrow: 1,
   },
   resultsListContent: {
-    padding: 8,
+    paddingBottom: 20, // Ensure content isn't cut off
   },
-  roomItem: {
+  roomCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
+    backgroundColor: '#fff',
+    marginHorizontal: 12,
+    marginVertical: 6,
     borderRadius: 16,
-    marginVertical: 4,
-    marginHorizontal: 8,
+    padding: 14,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
-  roomItemEven: {
-    backgroundColor: COLORS.card,
+  roomCardInactive: {
+    opacity: 0.6,
+    backgroundColor: '#f8f9fa',
   },
-  roomItemOdd: {
-    backgroundColor: 'rgba(199, 210, 254, 0.1)',
+  badge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  roomIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
+  badgeActive: {
+    backgroundColor: COLORS.success,
+  },
+  badgeInactive: {
+    backgroundColor: COLORS.warning,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  roomCardBody: {
+    flex: 1,
     marginRight: 12,
   },
-  roomIconText: {
-    fontSize: 16,
-  },
-  roomContent: {
-    flex: 1,
-  },
-  roomTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  roomCardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 4,
   },
-  roomTopic: {
-    fontSize: 12,
+  roomCardTopic: {
+    fontSize: 13,
     color: COLORS.primary,
     fontWeight: '600',
     marginBottom: 4,
   },
-  roomDescription: {
-    fontSize: 12,
+  roomCardDesc: {
+    fontSize: 13,
     color: COLORS.textLight,
-    lineHeight: 16,
+    lineHeight: 18,
   },
-  roomArrow: {
-    padding: 8,
+  roomCardDate: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 6,
   },
-  roomArrowText: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  noResults: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  noResultsEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  noResultsTitle: {
+  roomCardArrow: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 8,
+    color: COLORS.primary,
+    alignSelf: 'center',
   },
   noResultsText: {
     fontSize: 14,
     color: COLORS.textLight,
     textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  exploreButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  exploreButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
+    margin: 20,
   },
 });

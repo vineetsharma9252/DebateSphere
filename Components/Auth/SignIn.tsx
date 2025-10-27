@@ -29,9 +29,11 @@ const GOOGLE_AUTH_URL = "https://debatesphere-11.onrender.com/auth/google";
 
 // Configure Google Sign-In
 GoogleSignin.configure({
-  webClientId: '555564188297-qe9k1l1t0lvkm4sebgbtq8o51idtlnqk.apps.googleusercontent.com', // Get from Google Cloud Console
+  webClientId: '555564188297-qe9k1l1t0lvkm4sebgbtq8o51idtlnqk.apps.googleusercontent.com',
+  AndroidClientId:'555564188297-bue8gvfb31jhu5a82c4frhsjgje88274.apps.googleusercontent.com',
   offlineAccess: true,
   forceCodeForRefreshToken: true,
+  scopes: ['openid', 'profile', 'email'],
 });
 
 // Color palette matching your chatroom theme
@@ -65,6 +67,8 @@ const SignIn = ({ }) => {
 
     useEffect(() => {
         animateIn();
+        // Check current sign-in status on component mount
+        checkSignInStatus();
     }, []);
 
     const animateIn = () => {
@@ -85,6 +89,48 @@ const SignIn = ({ }) => {
                 useNativeDriver: true,
             })
         ]).start();
+    };
+
+    const checkSignInStatus = async () => {
+        try {
+            const currentUser = await GoogleSignin.getCurrentUser();
+            if (currentUser) {
+                console.log('User already signed in with Google:', currentUser.user.email);
+            }
+        } catch (error) {
+            console.log('No user currently signed in');
+        }
+    };
+
+    const testGoogleSignIn = async () => {
+        try {
+            console.log('Testing Google Sign-In configuration...');
+
+            // Test Play Services availability
+            const hasPlayServices = await GoogleSignin.hasPlayServices();
+            console.log('✅ Play Services available:', hasPlayServices);
+
+            console.log('✅ Google Sign-In is configured');
+
+            // Try to sign in silently to check if user is already signed in
+            try {
+                const currentUser = await GoogleSignin.getCurrentUser();
+                if (currentUser) {
+                    console.log('✅ User already signed in:', currentUser.user);
+                    Alert.alert("Test Result", "User is already signed in with Google!");
+                } else {
+                    console.log('✅ No user currently signed in - ready for new sign in');
+                    Alert.alert("Test Result", "Google Sign-In is configured correctly and ready for use!");
+                }
+            } catch (silentError) {
+                console.log('✅ No current user - ready for new sign in');
+                Alert.alert("Test Result", "Google Sign-In is configured correctly and ready for use!");
+            }
+
+        } catch (error) {
+            console.log('❌ Configuration test failed:', error);
+            Alert.alert("Test Failed", `Error: ${error.message}\n\nCode: ${error.code}`);
+        }
     };
 
     const handleNewAccount = () => {
@@ -123,19 +169,27 @@ const SignIn = ({ }) => {
     const handleGoogleAuth = async () => {
         setGoogleLoading(true);
         try {
+            console.log('Step 1: Checking Google Play Services...');
             await GoogleSignin.hasPlayServices();
+            console.log('✅ Google Play Services available');
+
+            console.log('Step 2: Starting Google Sign-In...');
             const userInfo = await GoogleSignin.signIn();
+            console.log('✅ Google Sign-In successful:', userInfo);
+
+            if (!userInfo || !userInfo.idToken) {
+                throw new Error('No ID token received from Google');
+            }
 
             // Send the ID token to your backend
             const { idToken } = userInfo;
-
-            console.log('Sending Google auth request with ID token...');
+            console.log('Step 3: Sending ID token to backend...');
 
             const response = await axios.post(GOOGLE_AUTH_URL, {
                 idToken: idToken
             });
 
-            console.log('Google auth response:', response.data);
+            console.log('✅ Backend response:', response.data);
 
             if (response.status === 200 || response.status === 201) {
                 const { user } = response.data;
@@ -150,30 +204,30 @@ const SignIn = ({ }) => {
                 // Navigate to Dashboard
                 navigation.navigate("Dashboard", { username: user.username });
 
-                Alert.alert("Success", "Google authentication successful!");
+                Alert.alert("Success", "Welcome to DebateSphere!");
             } else {
-                Alert.alert("Error", "Google authentication failed with status: " + response.status);
+                Alert.alert("Error", "Authentication failed. Please try again.");
             }
         } catch (error) {
-            console.log("Google auth error:", error);
+            console.log("❌ Google auth error:", error);
 
-            // More detailed error logging
-            if (error.response) {
-                console.log('Backend error response:', error.response.data);
-                Alert.alert(
-                    "Authentication Error",
-                    error.response.data.error || error.response.data.details || "Google authentication failed"
-                );
-            } else if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-                // User cancelled the login flow
-                console.log('User cancelled Google sign in');
+            // More specific error handling
+            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                console.log('User cancelled the login flow');
+                // No alert needed for cancellation
             } else if (error.code === statusCodes.IN_PROGRESS) {
-                Alert.alert("In Progress", "Sign in is already in progress");
+                Alert.alert("Info", "Sign in is already in progress");
             } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-                Alert.alert("Error", "Google Play Services not available");
+                Alert.alert("Error", "Google Play Services not available or outdated");
+            } else if (error.code === 'DEVELOPER_ERROR') {
+                console.log('Developer Error - Configuration issue');
+                Alert.alert(
+                    "Configuration Error",
+                    "Please make sure:\n\n1. Google Client ID is correct\n2. SHA-1 fingerprint is added (Android)\n3. Bundle ID is correct (iOS)\n\nTry the 'Test Google Config' button first."
+                );
             } else {
                 console.log('Other error:', error);
-                Alert.alert("Error", "Google authentication failed. Please try again.");
+                Alert.alert("Error", `Authentication failed: ${error.message}`);
             }
         } finally {
             setGoogleLoading(false);
@@ -301,6 +355,14 @@ const SignIn = ({ }) => {
                         <Text style={styles.dividerText}>or continue with</Text>
                         <View style={styles.dividerLine} />
                     </View>
+
+                    {/* Test Button - Temporary */}
+                    <TouchableOpacity
+                        style={styles.testButton}
+                        onPress={testGoogleSignIn}
+                    >
+                        <Text style={styles.testButtonText}>Test Google Config</Text>
+                    </TouchableOpacity>
 
                     {/* Google Sign In Button */}
                     <View style={styles.googleButtonContainer}>
@@ -475,6 +537,18 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '500',
         marginHorizontal: 12,
+    },
+    testButton: {
+        backgroundColor: COLORS.warning,
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 16,
+        alignItems: 'center',
+    },
+    testButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 'bold',
     },
     googleButtonContainer: {
         position: 'relative',
