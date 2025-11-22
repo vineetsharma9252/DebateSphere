@@ -3,12 +3,10 @@ const mongoose = require("mongoose");
 const { Server } = require("socket.io");
 const http = require("http");
 const cors = require("cors");
-const { OAuth2Client } = require('google-auth-library');
-const user = require("./models/Users.js");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
 const Room = require("./models/Room.js");
-const User = require("./models/Users.js");
+const User = require("./models/Users.js"); // Import User model
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 
@@ -342,8 +340,6 @@ app.get('/api/online_users', (req, res) => {
   });
 });
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
 // Create Room API Endpoint
 app.post('/api/create_room', async (req, res) => {
   try {
@@ -624,13 +620,13 @@ app.post("/signup", async (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
   }
 
-  const existingUser = await user.findOne({ email });
+  const existingUser = await User.findOne({ email }); // Use User instead of user
   if (existingUser) {
     return res.status(409).json({ error: "Email already exists" });
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = new user({ username, password: hashedPassword, email });
+  const newUser = new User({ username, password: hashedPassword, email }); // Use User instead of user
   await newUser.save();
 
   res.status(201).json({ message: "User registered", user: newUser._id });
@@ -639,7 +635,7 @@ app.post("/signup", async (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    const findUser = await User.findOne({ username });
+    const findUser = await User.findOne({ username }); // This should work now
     if (!findUser) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
@@ -660,7 +656,7 @@ app.put("/api/update_desc", async (req, res) => {
     const username = req.body.username;
 
     try {
-        const user = await User.findOne({ username });
+        const user = await User.findOne({ username }); // Use User instead of user
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -679,7 +675,7 @@ app.post("/api/get_details", async(req, res)=>{
     res.status(400).json({error: "Username is required"});
     }
      try{
-        const user = await User.findOne({username});
+        const user = await User.findOne({username}); // Use User instead of user
         if(!user){
             return res.status(404).json({error: "User not found"});
         }
@@ -731,7 +727,7 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
       user_image = req.body.user_image;
     }
 
-    const updatedUser = await User.findOneAndUpdate(
+    const updatedUser = await User.findOneAndUpdate( // Use User instead of user
       { username },
       { user_image },
       { new: true }
@@ -746,7 +742,7 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
 app.post("/api/get_desc", async (req, res)=>{
         const username = req.body.username;
         try {
-        const user = await User.findOne({username});
+        const user = await User.findOne({username}); // Use User instead of user
         console.log(user);
         if (!user){
             return res.status(404).json({error: "User not found"})
@@ -757,108 +753,6 @@ app.post("/api/get_desc", async (req, res)=>{
         catch(error){
         console.error("Error getting description:", error);
         }
-});
-
-// Google OAuth routes
-app.post('/auth/google', async (req, res) => {
-  try {
-    const { idToken } = req.body;
-    console.log('Received Google auth request');
-
-    if (!idToken) {
-      return res.status(400).json({ error: 'ID token is required' });
-    }
-
-    const ticket = await client.verifyIdToken({
-      idToken: idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
-
-    console.log('Google auth payload:', { googleId, email, name });
-
-    if (!email) {
-      return res.status(400).json({ error: 'Email not provided by Google' });
-    }
-
-    let user = await User.findOne({
-      $or: [{ email }, { googleId }]
-    });
-
-    if (!user) {
-      let baseUsername = email.split('@')[0];
-      let username = baseUsername;
-      let counter = 1;
-
-      while (await User.findOne({ username })) {
-        username = `${baseUsername}${counter}`;
-        counter++;
-        if (counter > 100) {
-          throw new Error('Could not generate unique username');
-        }
-      }
-
-      user = new User({
-        username: username,
-        email: email,
-        googleId: googleId,
-        profilePicture: picture || '',
-        isVerified: true,
-      });
-
-      await user.save();
-      console.log('New Google user created:', user.username);
-
-      const token = generateToken(user);
-
-      return res.status(201).json({
-        message: 'User created successfully',
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePicture: user.profilePicture
-        },
-        token: token
-      });
-    } else {
-      if (!user.googleId) {
-        user.googleId = googleId;
-        await user.save();
-      }
-
-      if ((!user.profilePicture || user.profilePicture === '') && picture) {
-        user.profilePicture = picture;
-        await user.save();
-      }
-
-      const token = generateToken(user);
-
-      return res.status(200).json({
-        message: 'Login successful',
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePicture: user.profilePicture
-        },
-        token: token
-      });
-    }
-  } catch (error) {
-    console.error('Google auth error:', error);
-
-    if (error.message.includes('Token used too late')) {
-      return res.status(401).json({ error: 'Authentication token expired' });
-    }
-
-    res.status(401).json({
-      error: 'Authentication failed',
-      details: error.message
-    });
-  }
 });
 
 // Health check route
