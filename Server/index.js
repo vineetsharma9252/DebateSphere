@@ -1,16 +1,18 @@
-import express from "express";
-import mongoose from "mongoose";
-import { Server } from "socket.io";
-import http from "http";
-import cors from "cors";
-import { OAuth2Client } from 'google-auth-library'
-import user from "./models/Users.js"; // Your Mongoose model
-import dotenv from "dotenv";
-import bcrypt from "bcryptjs";
-import Room from "./models/Room.js" ;
-import User from "./models/Users.js";
-import jwt from 'jsonwebtoken';
-dotenv.config(); // Loads variables from .env into process.env
+const express = require("express");
+const mongoose = require("mongoose");
+const { Server } = require("socket.io");
+const http = require("http");
+const cors = require("cors");
+const { OAuth2Client } = require('google-auth-library');
+const user = require("./models/Users.js");
+const dotenv = require("dotenv");
+const bcrypt = require("bcryptjs");
+const Room = require("./models/Room.js");
+const User = require("./models/Users.js");
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+
+dotenv.config();
 
 // Connect to MongoDB
 mongoose
@@ -21,13 +23,13 @@ mongoose
 // Message Schema for storing messages and images
 const messageSchema = new mongoose.Schema({
   text: { type: String, default: "" },
-  image: { type: String, default: "" }, // Store base64 image string
+  image: { type: String, default: "" },
   sender: { type: String, required: true },
   roomId: { type: String, required: true },
   time: { type: Date, default: Date.now },
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date },
-  deletedBy: { type: String }, // Track who deleted the message
+  deletedBy: { type: String },
 });
 
 const generateToken = (user) => {
@@ -42,9 +44,9 @@ const generateToken = (user) => {
   );
 };
 
-
 const Message = mongoose.model("Message", messageSchema);
 const onlineUsers = new Map();
+
 // Setup Express
 const app = express();
 app.use(express.json());
@@ -61,7 +63,7 @@ const server = http.createServer(app);
 // Initialize socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*", // Adjust for production
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -76,7 +78,6 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
-    // Send system message to room
     io.to(roomId).emit("receive_message", {
       text: `A user has joined the room`,
       sender: "System",
@@ -85,7 +86,6 @@ io.on("connection", (socket) => {
       isSystem: true,
     });
 
-    // Send previous messages
     try {
       const messages = await Message.find({ roomId })
         .sort({ time: 1 })
@@ -117,24 +117,20 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send_message", async (data, callback) => {
-    // data = { roomId, sender, text, image, time }
     console.log(`💬 Message from ${data.sender} in room ${data.roomId}: ${data.text || "Image"}`);
 
-    // Validate image if present
     if (data.image) {
       if (!data.image.startsWith("data:image/")) {
         if (callback) callback({ status: "error", error: "Invalid image format" });
         return;
       }
-      // Approximate base64 size check (5MB limit, accounting for base64 overhead)
-      if (data.image.length > 7 * 1024 * 1024) { // ~5MB after base64 decoding
+      if (data.image.length > 7 * 1024 * 1024) {
         if (callback) callback({ status: "error", error: "Image size exceeds 5MB" });
         return;
       }
     }
 
     try {
-      // Save message to database
       const messageData = {
         text: data.text || "",
         image: data.image || "",
@@ -145,7 +141,6 @@ io.on("connection", (socket) => {
       };
       const savedMessage = await new Message(messageData).save();
 
-      // Broadcast message to room
       const broadcastMessage = {
         id: savedMessage._id.toString(),
         text: savedMessage.text,
@@ -157,7 +152,6 @@ io.on("connection", (socket) => {
       };
       io.to(data.roomId).emit("receive_message", broadcastMessage);
 
-      // Acknowledge receipt
       if (callback) callback({ status: "ok", id: savedMessage._id });
     } catch (err) {
       console.error("Error saving message:", err);
@@ -165,13 +159,11 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle message deletion
   socket.on("delete_message", async (data, callback) => {
-    const { messageId, roomId , username} = data;
+    const { messageId, roomId, username } = data;
     console.log(`🗑️ Delete request for message ${messageId} by ${username} in room ${roomId}`);
 
     try {
-      // Find the message
       const message = await Message.findById(messageId);
 
       if (!message) {
@@ -179,21 +171,18 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Check if user is the sender (only allow users to delete their own messages)
-      console.log("Message Sender is " + message.sender) ;
-      console.log("Username is " + username) ;
+      console.log("Message Sender is " + message.sender);
+      console.log("Username is " + username);
       if (message.sender !== username) {
         if (callback) callback({ success: false, error: "You can only delete your own messages" });
         return;
       }
 
-      // Check if message is already deleted
       if (message.isDeleted) {
         if (callback) callback({ success: false, error: "Message already deleted" });
         return;
       }
 
-      // Soft delete the message (preserve in database but mark as deleted)
       message.text = "This message was deleted";
       message.image = "";
       message.isDeleted = true;
@@ -202,7 +191,6 @@ io.on("connection", (socket) => {
 
       await message.save();
 
-      // Broadcast deletion to all clients in the room
       const deletedMessage = {
         id: message._id.toString(),
         text: "This message was deleted",
@@ -217,7 +205,6 @@ io.on("connection", (socket) => {
 
       io.to(roomId).emit("message_deleted", deletedMessage);
 
-      // Send system message about deletion
       io.to(roomId).emit("receive_message", {
         text: `${username} deleted a message`,
         sender: "System",
@@ -234,71 +221,105 @@ io.on("connection", (socket) => {
     }
   });
 
-
   socket.on('user_online', (userData) => {
-      const { username, userId } = userData;
-      onlineUsers.set(socket.id, { username, userId, socketId: socket.id, lastSeen: new Date() });
+    const { username, userId } = userData;
+    onlineUsers.set(socket.id, { username, userId, socketId: socket.id, lastSeen: new Date() });
 
-      // Broadcast to all clients
+    io.emit('online_users_update', {
+      onlineCount: onlineUsers.size,
+      users: Array.from(onlineUsers.values())
+    });
+
+    console.log(`👤 ${username} is now online. Total online: ${onlineUsers.size}`);
+  });
+
+  socket.on('join_debate_room', (roomId) => {
+    socket.join(roomId);
+    const user = onlineUsers.get(socket.id);
+    if (user) {
+      socket.to(roomId).emit('user_joined_room', {
+        username: user.username,
+        roomId: roomId
+      });
+    }
+  });
+
+  socket.on('create_room', async (roomData, callback) => {
+    try {
+      const { title, desc, topic, createdBy } = roomData;
+
+      if (!title || !topic) {
+        if (callback) callback({ success: false, error: 'Title and topic are required' });
+        return;
+      }
+
+      if (!createdBy) {
+        if (callback) callback({ success: false, error: 'User ID is required' });
+        return;
+      }
+
+      const roomId = `room_${uuidv4()}`;
+
+      const newRoom = new Room({
+        roomId,
+        title: title.trim(),
+        desc: desc?.trim() || '',
+        topic: topic.trim(),
+        createdBy,
+        isActive: true,
+        createdAt: new Date()
+      });
+
+      await newRoom.save();
+      await newRoom.populate('createdBy', 'username');
+
+      io.emit('room_created', newRoom);
+
+      if (callback) callback({
+        success: true,
+        message: 'Room created successfully',
+        room: newRoom
+      });
+
+    } catch (error) {
+      console.error('Socket create room error:', error);
+      if (callback) callback({
+        success: false,
+        error: error.code === 11000 ? 'Room ID already exists' : 'Internal server error'
+      });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const user = onlineUsers.get(socket.id);
+    if (user) {
+      onlineUsers.delete(socket.id);
       io.emit('online_users_update', {
         onlineCount: onlineUsers.size,
         users: Array.from(onlineUsers.values())
       });
+      console.log(`🔴 ${user.username} disconnected. Total online: ${onlineUsers.size}`);
+    }
+  });
 
-      console.log(`👤 ${username} is now online. Total online: ${onlineUsers.size}`);
-    });
+  socket.on('user_offline', () => {
+    const user = onlineUsers.get(socket.id);
+    if (user) {
+      onlineUsers.delete(socket.id);
+      io.emit('online_users_update', {
+        onlineCount: onlineUsers.size,
+        users: Array.from(onlineUsers.values())
+      });
+    }
+  });
 
-    // User joins a specific room
-    socket.on('join_debate_room', (roomId) => {
-      socket.join(roomId);
-      const user = onlineUsers.get(socket.id);
-      if (user) {
-        socket.to(roomId).emit('user_joined_room', {
-          username: user.username,
-          roomId: roomId
-        });
-      }
-    });
-
-    // Handle user disconnect
-    socket.on('disconnect', () => {
-      const user = onlineUsers.get(socket.id);
-      if (user) {
-        onlineUsers.delete(socket.id);
-        io.emit('online_users_update', {
-          onlineCount: onlineUsers.size,
-          users: Array.from(onlineUsers.values())
-        });
-        console.log(`🔴 ${user.username} disconnected. Total online: ${onlineUsers.size}`);
-      }
-    });
-
-    // Handle manual user offline
-    socket.on('user_offline', () => {
-      const user = onlineUsers.get(socket.id);
-      if (user) {
-        onlineUsers.delete(socket.id);
-        io.emit('online_users_update', {
-          onlineCount: onlineUsers.size,
-          users: Array.from(onlineUsers.values())
-        });
-      }
-    });
-  // Handle message reporting
   socket.on("report_message", async (data, callback) => {
     const { messageId, roomId, reporter, reason } = data;
 
     console.log(`🚨 Message ${messageId} reported by ${reporter} in room ${roomId}: ${reason}`);
 
-    // Here you can implement your reporting logic:
-    // - Save report to database
-    // - Notify moderators
-    // - Auto-moderation checks
-
-    // For now, just log and acknowledge
     if (callback) callback({ success: true, message: "Message reported to moderators" });
 
-    // You can also notify moderators in real-time
     socket.to("moderators").emit("message_reported", {
       messageId,
       roomId,
@@ -313,7 +334,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// REST API routes for message management
+// REST API routes
 app.get('/api/online_users', (req, res) => {
   res.json({
     onlineCount: onlineUsers.size,
@@ -323,124 +344,173 @@ app.get('/api/online_users', (req, res) => {
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-//const generateToken = (user) => {
-//  return jwt.sign(
-//    { userId: user._id, username: user.username },
-//    process.env.JWT_SECRET,
-//    { expiresIn: '7d' }
-//  );
-//};
-
-app.post('/auth/google', async (req, res) => {
+// Create Room API Endpoint
+app.post('/api/create_room', async (req, res) => {
   try {
-    const { idToken } = req.body;
-    console.log('Received Google auth request');
+    const { title, desc, topic, createdBy } = req.body;
 
-    if (!idToken) {
-      return res.status(400).json({ error: 'ID token is required' });
+    if (!title || !topic) {
+      return res.status(400).json({ error: 'Title and topic are required' });
     }
 
-    // Verify the Google ID token
-    const ticket = await client.verifyIdToken({
-      idToken: idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+    if (!createdBy) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    if (title.length > 100) {
+      return res.status(400).json({ error: 'Title too long (max 100 characters)' });
+    }
+
+    if (desc && desc.length > 250) {
+      return res.status(400).json({ error: 'Description too long (max 250 characters)' });
+    }
+
+    const roomId = `room_${uuidv4()}`;
+
+    const newRoom = new Room({
+      roomId,
+      title: title.trim(),
+      desc: desc?.trim() || '',
+      topic: topic.trim(),
+      createdBy,
+      isActive: true,
+      createdAt: new Date()
     });
 
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
+    await newRoom.save();
+    await newRoom.populate('createdBy', 'username');
 
-    console.log('Google auth payload:', { googleId, email, name });
+    io.emit('room_created', newRoom);
 
-    if (!email) {
-      return res.status(400).json({ error: 'Email not provided by Google' });
-    }
-
-    // Check if user exists in your database
-    let user = await User.findOne({
-      $or: [{ email }, { googleId }]
+    res.status(201).json({
+      message: 'Room created successfully',
+      room: newRoom
     });
 
-    if (!user) {
-      // Generate a unique username
-      let baseUsername = email.split('@')[0];
-      let username = baseUsername;
-      let counter = 1;
-
-      // Check if username exists, if yes, append a number
-      while (await User.findOne({ username })) {
-        username = `${baseUsername}${counter}`;
-        counter++;
-        if (counter > 100) { // Safety limit
-          throw new Error('Could not generate unique username');
-        }
-      }
-
-      // Create new user without password for Google auth
-      user = new User({
-        username: username,
-        email: email,
-        googleId: googleId,
-        profilePicture: picture || '',
-        isVerified: true,
-        // Don't set password for Google users
-      });
-
-      await user.save();
-      console.log('New Google user created:', user.username);
-
-      const token = generateToken(user);
-
-      return res.status(201).json({
-        message: 'User created successfully',
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePicture: user.profilePicture
-        },
-        token: token
-      });
-    } else {
-      // Update googleId if not present
-      if (!user.googleId) {
-        user.googleId = googleId;
-        await user.save();
-      }
-
-      // Update profile picture if empty and new picture is available
-      if ((!user.profilePicture || user.profilePicture === '') && picture) {
-        user.profilePicture = picture;
-        await user.save();
-      }
-
-      const token = generateToken(user);
-
-      return res.status(200).json({
-        message: 'Login successful',
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePicture: user.profilePicture
-        },
-        token: token
-      });
-    }
   } catch (error) {
-    console.error('Google auth error:', error);
+    console.error('Create room error:', error);
 
-    if (error.message.includes('Token used too late')) {
-      return res.status(401).json({ error: 'Authentication token expired' });
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'Room ID already exists' });
     }
 
-    res.status(401).json({
-      error: 'Authentication failed',
-      details: error.message
-    });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get messages for a room (with deleted messages filtered or marked)
+// Get all rooms
+app.get('/api/all_rooms', async (req, res) => {
+  try {
+    const rooms = await Room.find({ isActive: true })
+      .populate('createdBy', 'username')
+      .sort({ createdAt: -1 });
+
+    res.json(rooms);
+  } catch (error) {
+    console.error('Get rooms error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get rooms by topic
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const { topic } = req.query;
+
+    if (!topic) {
+      return res.status(400).json({ error: 'Topic parameter is required' });
+    }
+
+    const rooms = await Room.find({
+      topic: new RegExp(topic, 'i'),
+      isActive: true
+    })
+    .populate('createdBy', 'username')
+    .sort({ createdAt: -1 });
+
+    res.json(rooms);
+  } catch (error) {
+    console.error('Get rooms by topic error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get room by ID
+app.get('/api/rooms/:roomId', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const room = await Room.findOne({ roomId })
+      .populate('createdBy', 'username');
+
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    res.json(room);
+  } catch (error) {
+    console.error('Get room error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update room
+app.put('/api/rooms/:roomId', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { title, desc, topic } = req.body;
+
+    const room = await Room.findOne({ roomId });
+
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    if (title) room.title = title.trim();
+    if (desc !== undefined) room.desc = desc.trim();
+    if (topic) room.topic = topic.trim();
+
+    await room.save();
+
+    res.json({
+      message: 'Room updated successfully',
+      room
+    });
+  } catch (error) {
+    console.error('Update room error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete room (soft delete)
+app.delete('/api/rooms/:roomId', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { userId } = req.body;
+
+    const room = await Room.findOne({ roomId });
+
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    if (room.createdBy.toString() !== userId) {
+      return res.status(403).json({ error: 'Only room creator can delete the room' });
+    }
+
+    room.isActive = false;
+    await room.save();
+
+    io.emit('room_deleted', { roomId });
+
+    res.json({ message: 'Room deleted successfully' });
+  } catch (error) {
+    console.error('Delete room error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get messages for a room
 app.get("/api/rooms/:roomId/messages", async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -448,7 +518,6 @@ app.get("/api/rooms/:roomId/messages", async (req, res) => {
 
     let query = { roomId };
 
-    // Filter out deleted messages unless explicitly requested
     if (includeDeleted === "false") {
       query.isDeleted = false;
     }
@@ -477,7 +546,7 @@ app.get("/api/rooms/:roomId/messages", async (req, res) => {
   }
 });
 
-// Delete message via REST API (for moderators)
+// Delete message via REST API
 app.delete("/api/messages/:messageId", async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -489,7 +558,6 @@ app.delete("/api/messages/:messageId", async (req, res) => {
       return res.status(404).json({ success: false, error: "Message not found" });
     }
 
-    // Check permissions - either user is sender or is moderator
     if (message.sender !== username && !isModerator) {
       return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }
@@ -498,7 +566,6 @@ app.delete("/api/messages/:messageId", async (req, res) => {
       return res.status(400).json({ success: false, error: "Message already deleted" });
     }
 
-    // Soft delete
     message.text = "This message was deleted";
     message.image = "";
     message.isDeleted = true;
@@ -507,7 +574,6 @@ app.delete("/api/messages/:messageId", async (req, res) => {
 
     await message.save();
 
-    // Broadcast deletion
     const deletedMessage = {
       id: message._id.toString(),
       text: "This message was deleted",
@@ -527,7 +593,7 @@ app.delete("/api/messages/:messageId", async (req, res) => {
   }
 });
 
-// Get message statistics (for admin/moderators)
+// Get message statistics
 app.get("/api/rooms/:roomId/stats", async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -589,20 +655,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.get('/api/rooms', async (req, res) => {
-  try {
-    const { topic } = req.query;
-    if (!topic) {
-      return res.status(400).json({ error: 'Topic is required' });
-    }
-    const rooms = await Room.find({ topic });
-    res.json(rooms);
-  } catch (error) {
-    console.error('Error fetching rooms:', error);
-    res.status(500).json({ error: 'Server error and error is '+error });
-  }
-});
-
 app.put("/api/update_desc", async (req, res) => {
     const desc = req.body.desc;
     const username = req.body.username;
@@ -620,8 +672,8 @@ app.put("/api/update_desc", async (req, res) => {
     }
 });
 
-app.post("/api/get_details" , async(req, res)=>{
-    const username = req.body.username ;
+app.post("/api/get_details", async(req, res)=>{
+    const username = req.body.username;
 
     if(!username){
     res.status(400).json({error: "Username is required"});
@@ -631,30 +683,27 @@ app.post("/api/get_details" , async(req, res)=>{
         if(!user){
             return res.status(404).json({error: "User not found"});
         }
-        res.json({user_data :user}) ;
+        res.json({user_data: user});
      }
      catch(error){
-     console.error("Something went wrong !") ;
+     console.error("Something went wrong !");
      }
-}) ;
+});
 
-// PUT /api/update_user_image
-import multer from 'multer';
-import path from 'path';
+// Multer setup
+const multer = require('multer');
+const path = require('path');
 
-// Configure storage for uploaded files
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/'); // Create this folder in your project root
+    cb(null, 'uploads/');
   },
   filename: function (req, file, cb) {
-    // Create unique filename: profile_username_timestamp.jpg
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, 'profile_' + req.body.username + '_' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
-// File filter to only allow images
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
@@ -663,12 +712,11 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Initialize multer
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024
   }
 });
 
@@ -678,10 +726,8 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
     let user_image = '';
 
     if (req.file) {
-      // Handle uploaded image - store the file path or URL
-      user_image = `/uploads/${req.file.filename}`; // or store in cloud storage
+      user_image = `/uploads/${req.file.filename}`;
     } else {
-      // Handle default image selection
       user_image = req.body.user_image;
     }
 
@@ -697,32 +743,123 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
   }
 });
 
-app.post("/api/get_desc" , async (req, res)=>{
-        const username = req.body.username ;
+app.post("/api/get_desc", async (req, res)=>{
+        const username = req.body.username;
         try {
         const user = await User.findOne({username});
-        console.log(user) ;
+        console.log(user);
         if (!user){
             return res.status(404).json({error: "User not found"})
         }
-        console.log("User Description is "+ user.desc) ;
-        res.json({desc: user.desc},{message : "Description is "+user.desc});
+        console.log("User Description is "+ user.desc);
+        res.json({desc: user.desc});
         }
         catch(error){
         console.error("Error getting description:", error);
         }
 });
 
-app.get('/api/all_rooms' , async (req , res) => {
-    try{
-    const rooms = await Room.find();
-    res.json(rooms);
-    console.log("All room send successfully! ");
+// Google OAuth routes
+app.post('/auth/google', async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    console.log('Received Google auth request');
+
+    if (!idToken) {
+      return res.status(400).json({ error: 'ID token is required' });
     }
-    catch(err){
-    res.status(500).json({error:err.message}) ;
+
+    const ticket = await client.verifyIdToken({
+      idToken: idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    console.log('Google auth payload:', { googleId, email, name });
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email not provided by Google' });
     }
-}) ;
+
+    let user = await User.findOne({
+      $or: [{ email }, { googleId }]
+    });
+
+    if (!user) {
+      let baseUsername = email.split('@')[0];
+      let username = baseUsername;
+      let counter = 1;
+
+      while (await User.findOne({ username })) {
+        username = `${baseUsername}${counter}`;
+        counter++;
+        if (counter > 100) {
+          throw new Error('Could not generate unique username');
+        }
+      }
+
+      user = new User({
+        username: username,
+        email: email,
+        googleId: googleId,
+        profilePicture: picture || '',
+        isVerified: true,
+      });
+
+      await user.save();
+      console.log('New Google user created:', user.username);
+
+      const token = generateToken(user);
+
+      return res.status(201).json({
+        message: 'User created successfully',
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          profilePicture: user.profilePicture
+        },
+        token: token
+      });
+    } else {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save();
+      }
+
+      if ((!user.profilePicture || user.profilePicture === '') && picture) {
+        user.profilePicture = picture;
+        await user.save();
+      }
+
+      const token = generateToken(user);
+
+      return res.status(200).json({
+        message: 'Login successful',
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          profilePicture: user.profilePicture
+        },
+        token: token
+      });
+    }
+  } catch (error) {
+    console.error('Google auth error:', error);
+
+    if (error.message.includes('Token used too late')) {
+      return res.status(401).json({ error: 'Authentication token expired' });
+    }
+
+    res.status(401).json({
+      error: 'Authentication failed',
+      details: error.message
+    });
+  }
+});
 
 // Health check route
 app.get("/", (req, res) => {

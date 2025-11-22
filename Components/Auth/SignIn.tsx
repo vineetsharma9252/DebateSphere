@@ -6,7 +6,6 @@ import {
     TextInput,
     TouchableOpacity,
     Pressable,
-    Image,
     Animated,
     StatusBar,
     KeyboardAvoidingView,
@@ -16,27 +15,12 @@ import {
 } from 'react-native';
 import { useNavigation } from "@react-navigation/native";
 import axios from 'axios';
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 import { useUser } from '../../Contexts/UserContext';
-import {
-  GoogleSignin,
-  GoogleSigninButton,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
 
 const BACKEND_URL = "https://debatesphere-11.onrender.com/login";
-const GOOGLE_AUTH_URL = "https://debatesphere-11.onrender.com/auth/google";
 
-// Configure Google Sign-In
-GoogleSignin.configure({
-  webClientId: '555564188297-qe9k1l1t0lvkm4sebgbtq8o51idtlnqk.apps.googleusercontent.com',
-  AndroidClientId:'555564188297-bue8gvfb31jhu5a82c4frhsjgje88274.apps.googleusercontent.com',
-  offlineAccess: true,
-  forceCodeForRefreshToken: true,
-  scopes: ['openid', 'profile', 'email'],
-});
-
-// Color palette matching your chatroom theme
+// Color palette
 const COLORS = {
   primary: '#667eea',
   primaryLight: '#c7d2fe',
@@ -51,11 +35,10 @@ const COLORS = {
   success: '#10b981'
 };
 
-const SignIn = ({ }) => {
+const SignIn = () => {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [googleLoading, setGoogleLoading] = useState(false);
     const [focusedInput, setFocusedInput] = useState(null);
     const navigation = useNavigation();
     const { login } = useUser();
@@ -67,8 +50,6 @@ const SignIn = ({ }) => {
 
     useEffect(() => {
         animateIn();
-        // Check current sign-in status on component mount
-        checkSignInStatus();
     }, []);
 
     const animateIn = () => {
@@ -91,51 +72,9 @@ const SignIn = ({ }) => {
         ]).start();
     };
 
-    const checkSignInStatus = async () => {
-        try {
-            const currentUser = await GoogleSignin.getCurrentUser();
-            if (currentUser) {
-                console.log('User already signed in with Google:', currentUser.user.email);
-            }
-        } catch (error) {
-            console.log('No user currently signed in');
-        }
-    };
-
-    const testGoogleSignIn = async () => {
-        try {
-            console.log('Testing Google Sign-In configuration...');
-
-            // Test Play Services availability
-            const hasPlayServices = await GoogleSignin.hasPlayServices();
-            console.log('✅ Play Services available:', hasPlayServices);
-
-            console.log('✅ Google Sign-In is configured');
-
-            // Try to sign in silently to check if user is already signed in
-            try {
-                const currentUser = await GoogleSignin.getCurrentUser();
-                if (currentUser) {
-                    console.log('✅ User already signed in:', currentUser.user);
-                    Alert.alert("Test Result", "User is already signed in with Google!");
-                } else {
-                    console.log('✅ No user currently signed in - ready for new sign in');
-                    Alert.alert("Test Result", "Google Sign-In is configured correctly and ready for use!");
-                }
-            } catch (silentError) {
-                console.log('✅ No current user - ready for new sign in');
-                Alert.alert("Test Result", "Google Sign-In is configured correctly and ready for use!");
-            }
-
-        } catch (error) {
-            console.log('❌ Configuration test failed:', error);
-            Alert.alert("Test Failed", `Error: ${error.message}\n\nCode: ${error.code}`);
-        }
-    };
-
     const handleNewAccount = () => {
         navigation.navigate("SignUp");
-    }
+    };
 
     const handleSignIn = async () => {
         if (!username.trim() || !password.trim()) {
@@ -150,13 +89,10 @@ const SignIn = ({ }) => {
             const response = await axios.post(BACKEND_URL, { username, password });
 
             if (response.status === 200) {
-                // ✅ Update the context with the logged-in user
                 login({ username: username });
-
-                // Navigate to Dashboard
-                navigation.navigate("Dashboard", {username: username});
+                navigation.navigate("Dashboard", { username: username });
             } else {
-                alert("Something went wrong try again")
+                alert("Something went wrong. Try again.");
             }
         } catch (error) {
             console.log("Login error:" + error);
@@ -164,79 +100,11 @@ const SignIn = ({ }) => {
         } finally {
             setIsLoading(false);
         }
-    }
-
-    const handleGoogleAuth = async () => {
-        setGoogleLoading(true);
-        try {
-            console.log('Step 1: Checking Google Play Services...');
-            await GoogleSignin.hasPlayServices();
-            console.log('✅ Google Play Services available');
-
-            console.log('Step 2: Starting Google Sign-In...');
-            const userInfo = await GoogleSignin.signIn();
-            console.log('✅ Google Sign-In successful:', userInfo);
-
-            if (!userInfo || !userInfo.idToken) {
-                throw new Error('No ID token received from Google');
-            }
-
-            // Send the ID token to your backend
-            const { idToken } = userInfo;
-            console.log('Step 3: Sending ID token to backend...');
-
-            const response = await axios.post(GOOGLE_AUTH_URL, {
-                idToken: idToken
-            });
-
-            console.log('✅ Backend response:', response.data);
-
-            if (response.status === 200 || response.status === 201) {
-                const { user } = response.data;
-
-                // Update the context with the logged-in user
-                login({
-                    username: user.username,
-                    email: user.email,
-                    profilePicture: user.profilePicture
-                });
-
-                // Navigate to Dashboard
-                navigation.navigate("Dashboard", { username: user.username });
-
-                Alert.alert("Success", "Welcome to DebateSphere!");
-            } else {
-                Alert.alert("Error", "Authentication failed. Please try again.");
-            }
-        } catch (error) {
-            console.log("❌ Google auth error:", error);
-
-            // More specific error handling
-            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-                console.log('User cancelled the login flow');
-                // No alert needed for cancellation
-            } else if (error.code === statusCodes.IN_PROGRESS) {
-                Alert.alert("Info", "Sign in is already in progress");
-            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-                Alert.alert("Error", "Google Play Services not available or outdated");
-            } else if (error.code === 'DEVELOPER_ERROR') {
-                console.log('Developer Error - Configuration issue');
-                Alert.alert(
-                    "Configuration Error",
-                    "Please make sure:\n\n1. Google Client ID is correct\n2. SHA-1 fingerprint is added (Android)\n3. Bundle ID is correct (iOS)\n\nTry the 'Test Google Config' button first."
-                );
-            } else {
-                console.log('Other error:', error);
-                Alert.alert("Error", `Authentication failed: ${error.message}`);
-            }
-        } finally {
-            setGoogleLoading(false);
-        }
-    }
+    };
 
     const handleForgotPassword = () => {
         alert("Password reset feature coming soon!");
-    }
+    };
 
     return (
         <KeyboardAvoidingView
@@ -244,19 +112,15 @@ const SignIn = ({ }) => {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Header Section */}
+                {/* Header */}
                 <Animated.View
                     style={[
                         styles.header,
-                        {
-                            opacity: fadeAnim,
-                            transform: [{ translateY: slideAnim }]
-                        }
+                        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                     ]}
                 >
                     <Animated.View
@@ -273,17 +137,13 @@ const SignIn = ({ }) => {
                     </Text>
                 </Animated.View>
 
-                {/* Form Section */}
+                {/* Form */}
                 <Animated.View
                     style={[
                         styles.formContainer,
-                        {
-                            opacity: fadeAnim,
-                            transform: [{ translateY: slideAnim }]
-                        }
+                        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                     ]}
                 >
-                    {/* Username Input */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Username</Text>
                         <TextInput
@@ -301,7 +161,6 @@ const SignIn = ({ }) => {
                         />
                     </View>
 
-                    {/* Password Input */}
                     <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>Password</Text>
                         <TextInput
@@ -320,7 +179,6 @@ const SignIn = ({ }) => {
                         />
                     </View>
 
-                    {/* Forgot Password */}
                     <TouchableOpacity
                         style={styles.forgotPasswordContainer}
                         onPress={handleForgotPassword}
@@ -330,7 +188,6 @@ const SignIn = ({ }) => {
                         </Text>
                     </TouchableOpacity>
 
-                    {/* Sign In Button */}
                     <Pressable
                         style={({ pressed }) => [
                             styles.signInButton,
@@ -349,38 +206,6 @@ const SignIn = ({ }) => {
                         )}
                     </Pressable>
 
-                    {/* Divider */}
-                    <View style={styles.dividerContainer}>
-                        <View style={styles.dividerLine} />
-                        <Text style={styles.dividerText}>or continue with</Text>
-                        <View style={styles.dividerLine} />
-                    </View>
-
-                    {/* Test Button - Temporary */}
-                    <TouchableOpacity
-                        style={styles.testButton}
-                        onPress={testGoogleSignIn}
-                    >
-                        <Text style={styles.testButtonText}>Test Google Config</Text>
-                    </TouchableOpacity>
-
-                    {/* Google Sign In Button */}
-                    <View style={styles.googleButtonContainer}>
-                        <GoogleSigninButton
-                            style={styles.googleButton}
-                            size={GoogleSigninButton.Size.Wide}
-                            color={GoogleSigninButton.Color.Dark}
-                            onPress={handleGoogleAuth}
-                            disabled={googleLoading}
-                        />
-                        {googleLoading && (
-                            <View style={styles.googleLoadingOverlay}>
-                                <Text style={styles.googleLoadingText}>Signing in...</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Sign Up Link */}
                     <View style={styles.signUpContainer}>
                         <Text style={styles.signUpText}>
                             Don't have an account?{' '}
@@ -392,8 +217,8 @@ const SignIn = ({ }) => {
                 </Animated.View>
             </ScrollView>
         </KeyboardAvoidingView>
-    )
-}
+    );
+};
 
 const styles = StyleSheet.create({
     container: {
@@ -469,11 +294,6 @@ const styles = StyleSheet.create({
         padding: 16,
         fontSize: 16,
         color: COLORS.text,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
     },
     inputFocused: {
         borderColor: COLORS.primary,
@@ -521,57 +341,6 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 18,
         fontWeight: 'bold',
-    },
-    dividerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    dividerLine: {
-        flex: 1,
-        height: 1,
-        backgroundColor: '#e2e8f0',
-    },
-    dividerText: {
-        color: COLORS.textLight,
-        fontSize: 14,
-        fontWeight: '500',
-        marginHorizontal: 12,
-    },
-    testButton: {
-        backgroundColor: COLORS.warning,
-        padding: 12,
-        borderRadius: 8,
-        marginBottom: 16,
-        alignItems: 'center',
-    },
-    testButtonText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    googleButtonContainer: {
-        position: 'relative',
-        marginBottom: 24,
-    },
-    googleButton: {
-        width: '100%',
-        height: 48,
-    },
-    googleLoadingOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRadius: 12,
-    },
-    googleLoadingText: {
-        color: COLORS.text,
-        fontWeight: '600',
     },
     signUpContainer: {
         flexDirection: 'row',

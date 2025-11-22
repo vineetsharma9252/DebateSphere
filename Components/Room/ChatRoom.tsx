@@ -16,8 +16,10 @@ import {
   Animated,
 } from 'react-native';
 import io from 'socket.io-client';
-import {useUser} from "../../Contexts/UserContext"
+import { useUser } from "../../Contexts/UserContext";
 import { useRoute } from '@react-navigation/native';
+import AIDetectionService from '../services/AIDetectionService';
+import AIContentWarning from '../warning/AIContentWarning';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com/';
 
@@ -93,6 +95,10 @@ export default function ChatRoom({ route }) {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState(null);
+  const [aiWarningVisible, setAiWarningVisible] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState(null);
+  const [userAIScore, setUserAIScore] = useState(0);
+  const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
   const { roomId, title, desc } = route.params;
   const { username } = useUser();
   console.log("Username is " + username);
@@ -167,7 +173,7 @@ export default function ChatRoom({ route }) {
       }
     });
 
-    // Handle message deletion events - FIXED: Expect message object, not just ID
+    // Handle message deletion events
     socketRef.current.on('message_deleted', (deletedMessage) => {
       console.log('Message deleted:', deletedMessage);
       if (deletedMessage && deletedMessage.id) {
@@ -212,16 +218,48 @@ export default function ChatRoom({ route }) {
     }
   }, [messages]);
 
-  const sendMessage = (imageData = null) => {
+  const checkForAIContent = async (text) => {
+    if (!text || text.length < 20) return null;
+    const detection = await AIDetectionService.isLikelyAI(text, 0.65);
+    return detection;
+  };
+
+  // Enhanced sendMessage function with AI detection
+  const sendMessage = async (imageData = null) => {
     if (!isConnected || isConnecting) return;
     if (!text.trim() && !imageData) return;
-    console.log("Username is " + username) ;
+
+    const messageText = text.trim();
+
+    // Check for AI content if text is present
+    if (messageText && messageText.length > 20) {
+      const aiDetection = await checkForAIContent(messageText);
+
+      if (aiDetection && aiDetection.isAI) {
+        // Show warning modal
+        setPendingMessage({
+          text: messageText,
+          image: imageData,
+          aiDetection: aiDetection
+        });
+        setAiWarningVisible(true);
+        return;
+      }
+    }
+
+    // If no AI detected or image only, send normally
+    proceedWithMessage(messageText, imageData);
+  };
+
+  const proceedWithMessage = (messageText, imageData, isAIDetected = false) => {
     const messageData = {
-      text: text.trim(),
+      text: messageText,
       image: imageData,
       sender: username || 'Guest',
       roomId,
       time: new Date().toISOString(),
+      aiDetected: isAIDetected,
+      aiConfidence: isAIDetected ? pendingMessage?.aiDetection?.confidence : 0
     };
 
     console.log('Sending message:', messageData);
@@ -230,11 +268,71 @@ export default function ChatRoom({ route }) {
       console.log('Server ACK:', ack);
       if (ack && ack.error) {
         Alert.alert('Error', 'Failed to send message');
+      } else if (isAIDetected) {
+        // Track AI usage
+        handleAIDetection();
       }
     });
 
     setText('');
+    setPendingMessage(null);
   };
+
+  const handleAIDetection = () => {
+    setConsecutiveAIDetections(prev => {
+      const newCount = prev + 1;
+
+      if (newCount >= 3) {
+        Alert.alert(
+          'AI Content Warning',
+          'Multiple AI-generated messages detected. Please use your own arguments to continue participating.',
+          [{ text: 'OK' }]
+        );
+
+        // You could implement temporary restrictions here
+        if (newCount >= 5) {
+          // Temporary mute or other restrictions
+          Alert.alert(
+            'Restriction Applied',
+            'You have been temporarily restricted from sending messages due to repeated AI content.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+
+      return newCount;
+    });
+  };
+
+  const handleAIConfirm = () => {
+    if (pendingMessage) {
+      proceedWithMessage(pendingMessage.text, pendingMessage.image, true);
+    }
+    setAiWarningVisible(false);
+  };
+
+  const handleAICancel = () => {
+    setPendingMessage(null);
+    setAiWarningVisible(false);
+    // Optionally, put the text back in the input for editing
+    if (pendingMessage?.text) {
+      setText(pendingMessage.text);
+    }
+  };
+
+  // Reset consecutive detections after successful human message
+  useEffect(() => {
+    if (text && text.length > 0) {
+      const lastDetection = consecutiveAIDetections;
+      // Reset if user sends a message that's not flagged as AI
+      setTimeout(async () => {
+        const detection = await checkForAIContent(text);
+        if (!detection?.isAI && lastDetection === consecutiveAIDetections) {
+          setConsecutiveAIDetections(0);
+        }
+      }, 1000);
+    }
+  }, [text]);
 
   const handleImageSelected = (base64Image) => {
     sendMessage(base64Image);
@@ -295,17 +393,16 @@ export default function ChatRoom({ route }) {
     setDeleteModalVisible(true);
   };
 
-  // FIXED: Remove parameter and use the state variable directly
   const deleteMessage = () => {
     if (!messageToDelete) return;
 
     console.log('Deleting message:', messageToDelete.id);
 
-    // Emit delete event to server - FIXED: Use proper data structure
+    // Emit delete event to server
     socketRef.current.emit('delete_message', {
       messageId: messageToDelete.id,
       roomId: roomId,
-      username: username // Use the username from props/state
+      username: username
     }, (ack) => {
       console.log('Delete ACK:', ack);
       if (ack && ack.success) {
@@ -364,6 +461,7 @@ export default function ChatRoom({ route }) {
           item.sender === username ? styles.myMsg : styles.theirMsg,
           item.isSystem && styles.systemMsg,
           item.isDeleted && styles.deletedMsg,
+          item.aiDetected && styles.aiDetectedMsg,
         ]}
         onLongPress={() => handleMessageLongPress(item)}
         delayLongPress={500}
@@ -373,6 +471,12 @@ export default function ChatRoom({ route }) {
           <Text style={styles.msgUser}>
             {item.sender}
           </Text>
+        )}
+
+        {item.aiDetected && (
+          <View style={styles.aiWarningBadge}>
+            <Text style={styles.aiWarningText}>🤖 AI Detected</Text>
+          </View>
         )}
 
         {item.isDeleted ? (
@@ -435,6 +539,14 @@ export default function ChatRoom({ route }) {
     >
       <StatusBar barStyle="dark-content" backgroundColor="#667eea" />
 
+      {/* AI Content Warning Modal */}
+      <AIContentWarning
+        message={pendingMessage}
+        visible={aiWarningVisible}
+        onConfirm={handleAIConfirm}
+        onCancel={handleAICancel}
+      />
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
@@ -460,6 +572,15 @@ export default function ChatRoom({ route }) {
             {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
           </Text>
         </View>
+
+        {/* AI Usage Indicator */}
+        {consecutiveAIDetections > 0 && (
+          <View style={styles.aiUsageIndicator}>
+            <Text style={styles.aiUsageText}>
+              AI Usage: {consecutiveAIDetections}/3 warnings
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Connection Status Banner */}
@@ -586,7 +707,7 @@ export default function ChatRoom({ route }) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.deleteButton]}
-                onPress={deleteMessage} // FIXED: No parameter needed
+                onPress={deleteMessage}
               >
                 <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
@@ -598,7 +719,6 @@ export default function ChatRoom({ route }) {
   );
 }
 
-// Styles remain the same...
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -752,6 +872,10 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     opacity: 0.7,
   },
+  aiDetectedMsg: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2626',
+  },
   msgUser: {
     fontSize: 12,
     fontWeight: '600',
@@ -810,6 +934,33 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: 'rgba(255,255,255,0.5)',
     fontStyle: 'italic',
+  },
+  aiWarningBadge: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  aiWarningText: {
+    color: '#dc2626',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  aiUsageIndicator: {
+    backgroundColor: '#fffbeb',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    marginTop: 8,
+  },
+  aiUsageText: {
+    color: '#92400e',
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   inputContainer: {
     backgroundColor: '#fff',

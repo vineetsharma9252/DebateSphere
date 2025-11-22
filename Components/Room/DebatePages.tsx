@@ -10,10 +10,14 @@ import {
   ScrollView,
   Animated,
   StatusBar,
-  Modal
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import io from 'socket.io-client';
+import { useUser } from "../../Contexts/UserContext";
 
 // Color palette matching your chatroom theme
 const COLORS = {
@@ -32,6 +36,7 @@ const COLORS = {
   pink: '#ec4899',
   teal: '#14b8a6'
 };
+
 const SOCKET_URL = "https://debatesphere-11.onrender.com";
 const TOPICS = [
   { name: 'All Topics', icon: '🌐', color: COLORS.primary },
@@ -43,9 +48,220 @@ const TOPICS = [
   { name: 'Health', icon: '💊', color: '#a8edea' },
 ];
 
+// Create Room Modal Component
+const CreateRoomModal = ({ visible, onClose, onCreateRoom, username, userId }) => {
+  const [roomData, setRoomData] = useState({
+    title: '',
+    desc: '',
+    topic: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [customTopic, setCustomTopic] = useState('');
+
+  const topics = [
+    'Politics', 'Technology', 'Environment', 'Sports',
+    'Education', 'Health', 'Science', 'Philosophy',
+    'Entertainment', 'Business', 'Custom'
+  ];
+
+  const handleCreateRoom = async () => {
+    if (!roomData.title.trim()) {
+      Alert.alert('Error', 'Please enter a room title');
+      return;
+    }
+
+    if (!roomData.topic) {
+      Alert.alert('Error', 'Please select a topic');
+      return;
+    }
+
+    if (roomData.topic === 'Custom' && !customTopic.trim()) {
+      Alert.alert('Error', 'Please enter a custom topic');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const finalTopic = roomData.topic === 'Custom' ? customTopic : roomData.topic;
+
+      const roomPayload = {
+        title: roomData.title.trim(),
+        desc: roomData.desc.trim(),
+        topic: finalTopic,
+        createdBy: userId,
+      };
+
+      const response = await fetch('https://debatesphere-11.onrender.com/api/create_room', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(roomPayload),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        Alert.alert('Success', 'Room created successfully!');
+        onCreateRoom(result.room);
+        resetForm();
+        onClose();
+      } else {
+        Alert.alert('Error', result.error || 'Failed to create room');
+      }
+    } catch (error) {
+      console.error('Create room error:', error);
+      Alert.alert('Error', 'Network error while creating room');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setRoomData({
+      title: '',
+      desc: '',
+      topic: '',
+    });
+    setCustomTopic('');
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={handleClose}
+    >
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Create Debate Room</Text>
+            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.formContainer} showsVerticalScrollIndicator={false}>
+            {/* Room Title */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Room Title *</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter a compelling debate topic..."
+                value={roomData.title}
+                onChangeText={(text) => setRoomData(prev => ({ ...prev, title: text }))}
+                maxLength={100}
+              />
+              <Text style={styles.charCount}>{roomData.title.length}/100</Text>
+            </View>
+
+            {/* Description */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Description</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                placeholder="Describe what this debate will be about..."
+                value={roomData.desc}
+                onChangeText={(text) => setRoomData(prev => ({ ...prev, desc: text }))}
+                multiline
+                numberOfLines={3}
+                maxLength={250}
+              />
+              <Text style={styles.charCount}>{roomData.desc.length}/250</Text>
+            </View>
+
+            {/* Topic Selection */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Topic Category *</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.topicScrollView}
+              >
+                <View style={styles.topicContainer}>
+                  {topics.map((topic) => (
+                    <TouchableOpacity
+                      key={topic}
+                      style={[
+                        styles.topicButton,
+                        roomData.topic === topic && styles.topicButtonSelected,
+                      ]}
+                      onPress={() => setRoomData(prev => ({ ...prev, topic }))}
+                    >
+                      <Text style={[
+                        styles.topicButtonText,
+                        roomData.topic === topic && styles.topicButtonTextSelected,
+                      ]}>
+                        {topic}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              {roomData.topic === 'Custom' && (
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter your custom topic..."
+                  value={customTopic}
+                  onChangeText={setCustomTopic}
+                  maxLength={50}
+                />
+              )}
+            </View>
+
+            {/* Created By Info */}
+            <View style={styles.userInfo}>
+              <Text style={styles.userInfoLabel}>Created by:</Text>
+              <Text style={styles.userInfoText}>{username || 'Anonymous'}</Text>
+            </View>
+          </ScrollView>
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={handleClose}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.button,
+                styles.createButton,
+                loading && styles.createButtonDisabled,
+                (!roomData.title.trim() || !roomData.topic) && styles.createButtonDisabled
+              ]}
+              onPress={handleCreateRoom}
+              disabled={loading || !roomData.title.trim() || !roomData.topic}
+            >
+              <Text style={styles.createButtonText}>
+                {loading ? 'Creating...' : 'Create Room'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+};
+
 export default function DebatePage() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { user } = useUser();
   const [showOnlineUsers, setShowOnlineUsers] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,8 +269,9 @@ export default function DebatePage() {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [onlineCount, setOnlineCount] = useState(0);
   const [socket, setSocket] = useState(null);
+  const [createRoomModalVisible, setCreateRoomModalVisible] = useState(false);
 
-  const { topic: initialTopic, username } = route.params || {};
+  const { topic: initialTopic } = route.params || {};
   const [selectedTopic, setSelectedTopic] = useState(initialTopic || 'All Topics');
 
   // Animation values
@@ -62,43 +279,40 @@ export default function DebatePage() {
   const slideAnim = useState(new Animated.Value(50))[0];
 
   useEffect(() => {
-      initializeSocket();
+    initializeSocket();
     fetchRooms();
     animateIn();
 
-    return ()=>{
-        if(socket){
-            socket.disconnect();
-            }
-        }
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
   }, [selectedTopic]);
 
   const initializeSocket = () => {
-      const newSocket = io(SOCKET_URL);
-      setSocket(newSocket);
+    const newSocket = io(SOCKET_URL);
+    setSocket(newSocket);
 
-      newSocket.on('connect', () => {
-        console.log('Connected to server');
-        // Notify server that user is online
-        if (user) {
-          newSocket.emit('user_online', {
-            username: user.username,
-            userId: user.id
-          });
-        }
-      });
+    newSocket.on('connect', () => {
+      console.log('Connected to server');
+    });
 
-      newSocket.on('online_users_update', (data) => {
-        setOnlineCount(data.onlineCount);
-        setOnlineUsers(data.users);
-      });
+    newSocket.on('online_users_update', (data) => {
+      setOnlineCount(data.onlineCount);
+      setOnlineUsers(data.users);
+    });
 
-      newSocket.on('disconnect', () => {
-        console.log('Disconnected from server');
-      });
+    newSocket.on('room_created', (newRoom) => {
+      setRooms(prev => [newRoom, ...prev]);
+    });
 
-      return newSocket;
-    };
+    newSocket.on('disconnect', () => {
+      console.log('Disconnected from server');
+    });
+
+    return newSocket;
+  };
 
   const animateIn = () => {
     Animated.parallel([
@@ -144,66 +358,79 @@ export default function DebatePage() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchRooms();
-    fetchOnlineUsers();
+  };
+
+  const handleRoomCreated = (newRoom) => {
+    setRooms(prev => [newRoom, ...prev]);
+    setCreateRoomModalVisible(false);
+
+    if (newRoom.topic) {
+      setSelectedTopic(newRoom.topic);
+    }
+  };
+
+  const handleCreateRoom = () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to create a room');
+      return;
+    }
+    setCreateRoomModalVisible(true);
   };
 
   const handleJoinRoom = (roomId, title, desc) => {
     navigation.navigate('ChatRoom', {
-      username: username || 'Guest',
       roomId,
       title,
       desc,
     });
   };
 
-  const handleCreateRoom = () => {
-    Alert.alert('Coming Soon', 'Room creation feature will be available soon!');
-  };
-    const renderOnlineUsersModal = () => (
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={showOnlineUsers}
-          onRequestClose={() => setShowOnlineUsers(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Online Debaters</Text>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={() => setShowOnlineUsers(false)}
-                >
-                  <Text style={styles.closeButtonText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.onlineStats}>
-                <Text style={styles.onlineCountText}>
-                  {onlineCount} users online
-                </Text>
-              </View>
-
-              <FlatList
-                data={onlineUsers}
-                keyExtractor={(item) => item.socketId}
-                renderItem={({ item }) => (
-                  <View style={styles.userItem}>
-                    <View style={styles.userAvatar}>
-                      <Text style={styles.userAvatarText}>
-                        {item.username?.charAt(0)?.toUpperCase() || 'U'}
-                      </Text>
-                    </View>
-                    <Text style={styles.userName}>{item.username}</Text>
-                    <View style={styles.onlineIndicator} />
-                  </View>
-                )}
-                contentContainerStyle={styles.usersList}
-              />
-            </View>
+  const renderOnlineUsersModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={showOnlineUsers}
+      onRequestClose={() => setShowOnlineUsers(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Online Debaters</Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowOnlineUsers(false)}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      );
+
+          <View style={styles.onlineStats}>
+            <Text style={styles.onlineCountText}>
+              {onlineCount} users online
+            </Text>
+          </View>
+
+          <FlatList
+            data={onlineUsers}
+            keyExtractor={(item) => item.socketId}
+            renderItem={({ item }) => (
+              <View style={styles.userItem}>
+                <View style={styles.userAvatar}>
+                  <Text style={styles.userAvatarText}>
+                    {item.username?.charAt(0)?.toUpperCase() || 'U'}
+                  </Text>
+                </View>
+                <Text style={styles.userName}>{item.username}</Text>
+                <View style={styles.onlineIndicator} />
+              </View>
+            )}
+            contentContainerStyle={styles.usersList}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+
   const renderRoom = ({ item, index }) => (
     <Animated.View
       style={[
@@ -240,8 +467,10 @@ export default function DebatePage() {
         </Text>
 
         <View style={styles.roomFooter}>
-          <View style={styles.participants}>
-            <Text style={styles.participantsText}>👥 12 debating</Text>
+          <View style={styles.creatorInfo}>
+            <Text style={styles.creatorText}>
+              Created by {item.createdBy?.username || 'Anonymous'}
+            </Text>
           </View>
           <View style={styles.roomMeta}>
             <Text style={styles.roomTime}>
@@ -279,112 +508,95 @@ export default function DebatePage() {
       </Text>
     </TouchableOpacity>
   );
+
   const renderHeader = () => (
-      <Animated.View
-        style={[
-          styles.header,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
-        <View style={styles.headerContent}>
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>
-              {selectedTopic === 'All Topics' ? 'All Debate Rooms' : `${selectedTopic} Debates`}
+    <Animated.View
+      style={[
+        styles.header,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }]
+        }
+      ]}
+    >
+      <View style={styles.headerContent}>
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle}>
+            {selectedTopic === 'All Topics' ? 'All Debate Rooms' : `${selectedTopic} Debates`}
+          </Text>
+          <View style={styles.headerSubtitleContainer}>
+            <Text style={styles.headerSubtitle}>
+              {rooms.length} active rooms • {onlineCount} debaters online
             </Text>
-            <View style={styles.headerSubtitleContainer}>
-              <Text style={styles.headerSubtitle}>
-                {rooms.length} active rooms • {onlineCount} debaters online
-              </Text>
-              <View style={styles.liveIndicator}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
-              </View>
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
             </View>
           </View>
-          {initialTopic && initialTopic !== selectedTopic && (
-            <View style={styles.navigationBadge}>
-              <Text style={styles.navigationBadgeText}>
-                From: {initialTopic}
-              </Text>
-            </View>
-          )}
         </View>
-      </Animated.View>
-    );
-    const renderStatsContainer = () => (
+        {initialTopic && initialTopic !== selectedTopic && (
+          <View style={styles.navigationBadge}>
+            <Text style={styles.navigationBadgeText}>
+              From: {initialTopic}
+            </Text>
+          </View>
+        )}
+      </View>
+    </Animated.View>
+  );
 
-       <View style={styles.statsContainer}>
+  const renderStatsContainer = () => (
+    <View style={styles.statsContainer}>
+      <TouchableOpacity
+        style={styles.statItem}
+        onPress={() => setShowOnlineUsers(true)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.statIcon}>
+          <Text style={styles.statIconText}>👥</Text>
+        </View>
+        <Text style={styles.statNumber}>{onlineCount}</Text>
+        <Text style={styles.statLabel}>Online Now</Text>
+        <Text style={styles.statSubtext}>Tap to view</Text>
+      </TouchableOpacity>
 
-         <TouchableOpacity
-           style={styles.statItem}
-           onPress={() => setShowOnlineUsers(true)}
-           activeOpacity={0.7}
-         >
-           <View style={styles.statIcon}>
-             <Text style={styles.statIconText}>👥</Text>
-           </View>
-           <Text style={styles.statNumber}>{onlineCount}</Text>
-           <Text style={styles.statLabel}>Online Now</Text>
-           <Text style={styles.statSubtext}>Tap to view</Text>
-         </TouchableOpacity>
+      <View style={styles.statDivider} />
 
-         <View style={styles.statDivider} />
+      <View style={styles.statItem}>
+        <View style={styles.statIcon}>
+          <Text style={styles.statIconText}>💬</Text>
+        </View>
+        <Text style={styles.statNumber}>{rooms.length}</Text>
+        <Text style={styles.statLabel}>Active Rooms</Text>
+      </View>
 
-         <View style={styles.statItem}>
-           <View style={styles.statIcon}>
-             <Text style={styles.statIconText}>💬</Text>
-           </View>
-           <Text style={styles.statNumber}>{rooms.length}</Text>
-           <Text style={styles.statLabel}>Active Rooms</Text>
-         </View>
+      <View style={styles.statDivider} />
 
-         <View style={styles.statDivider} />
-
-         <View style={styles.statItem}>
-           <View style={styles.statIcon}>
-             <Text style={styles.statIconText}>🔥</Text>
-           </View>
-           <Text style={styles.statNumber}>{TOPICS.length}</Text>
-           <Text style={styles.statLabel}>Topics</Text>
-         </View>
-       </View>
-     );
+      <View style={styles.statItem}>
+        <View style={styles.statIcon}>
+          <Text style={styles.statIconText}>🔥</Text>
+        </View>
+        <Text style={styles.statNumber}>{TOPICS.length}</Text>
+        <Text style={styles.statLabel}>Topics</Text>
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
+      {/* Create Room Modal */}
+      <CreateRoomModal
+        visible={createRoomModalVisible}
+        onClose={() => setCreateRoomModalVisible(false)}
+        onCreateRoom={handleRoomCreated}
+        username={user?.username}
+        userId={user?.id}
+      />
+
       {renderOnlineUsersModal()}
-      <Animated.View
-        style={[
-          styles.header,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
-        <View style={styles.headerContent}>
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>
-              {selectedTopic === 'All Topics' ? 'All Debate Rooms' : `${selectedTopic} Debates`}
-            </Text>
-            <Text style={styles.headerSubtitle}>
-              {rooms.length} active rooms • Join the conversation
-            </Text>
-          </View>
-          {initialTopic && initialTopic !== selectedTopic && (
-            <View style={styles.navigationBadge}>
-              <Text style={styles.navigationBadgeText}>
-                From: {initialTopic}
-              </Text>
-            </View>
-          )}
-        </View>
-      </Animated.View>
+      {renderHeader()}
 
       {/* Topic Filter Section */}
       <View style={styles.topicSection}>
@@ -400,8 +612,8 @@ export default function DebatePage() {
       </View>
 
       {/* Quick Stats */}
-//
-     {renderStatsContainer()}
+      {renderStatsContainer()}
+
       {/* Rooms List */}
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -425,7 +637,7 @@ export default function DebatePage() {
         <Animated.FlatList
           data={rooms}
           renderItem={renderRoom}
-          keyExtractor={(item) => item.roomId}
+          keyExtractor={(item) => item.roomId || item._id}
           contentContainerStyle={styles.roomList}
           showsVerticalScrollIndicator={false}
           onRefresh={handleRefresh}
@@ -477,9 +689,34 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 8,
   },
+  headerSubtitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   headerSubtitle: {
     fontSize: 16,
     color: 'rgba(255,255,255,0.8)',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4ade80',
+    marginRight: 4,
+  },
+  liveText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: '600',
   },
   navigationBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',
@@ -560,6 +797,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  statIcon: {
+    marginBottom: 8,
+  },
+  statIconText: {
+    fontSize: 20,
+  },
   statNumber: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -570,6 +813,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
     textAlign: 'center',
+  },
+  statSubtext: {
+    fontSize: 10,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   statDivider: {
     width: 1,
@@ -658,13 +907,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  participants: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  creatorInfo: {
+    flex: 1,
   },
-  participantsText: {
+  creatorText: {
     fontSize: 12,
     color: COLORS.textLight,
+    fontStyle: 'italic',
   },
   roomMeta: {
     flexDirection: 'row',
@@ -751,5 +1000,196 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#64748b',
+    fontWeight: 'bold',
+  },
+  formContainer: {
+    padding: 24,
+  },
+  inputGroup: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    backgroundColor: '#f8fafc',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    fontSize: 12,
+    color: '#94a3b8',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  topicScrollView: {
+    marginBottom: 12,
+  },
+  topicContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  topicButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  topicButtonSelected: {
+    backgroundColor: '#667eea',
+    borderColor: '#667eea',
+  },
+  topicButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#64748b',
+  },
+  topicButtonTextSelected: {
+    color: 'white',
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  userInfoLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: 8,
+  },
+  userInfoText: {
+    fontSize: 14,
+    color: '#667eea',
+    fontWeight: '500',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
+  createButton: {
+    backgroundColor: '#667eea',
+  },
+  createButtonDisabled: {
+    opacity: 0.6,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  createButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
+  },
+  onlineStats: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  onlineCountText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    textAlign: 'center',
+  },
+  usersList: {
+    padding: 16,
+  },
+  userItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  userAvatarText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  userName: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1e293b',
+    fontWeight: '500',
+  },
+  onlineIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.accent,
   },
 });
