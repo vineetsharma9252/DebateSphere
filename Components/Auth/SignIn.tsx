@@ -91,10 +91,9 @@ const SignIn = () => {
             if (response.status === 200) {
                 login({
                                     username: username,
-                                    // Add other user properties you get from the backend
-                                    id: response.data.userId || username, // Use actual ID from response if available
+                                    id: response.data.id || username,
                                     email: response.data.email || '',
-                                    // ... any other user data from your backend
+                                    user_image:response.data.user_image,
                                 });
                 navigation.navigate("Dashboard", { username: username });
             } else {

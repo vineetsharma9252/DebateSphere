@@ -390,7 +390,7 @@ app.post('/api/create_room', async (req, res) => {
       return res.status(400).json({ error: 'Room ID already exists' });
     }
 
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error',message:error });
   }
 });
 

@@ -53,6 +53,7 @@ export default function Dashboard() {
   const scrollX = useRef(new Animated.Value(0)).current;
 
   console.log("Username at dashboard is " + user.username);
+  const username = user.username ;
 
   useEffect(() => {
     fetchAllRooms();

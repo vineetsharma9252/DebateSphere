@@ -45,8 +45,8 @@ export default function Profile() {
     const [details, setDetails] = useState({});
     const [imageModalVisible, setImageModalVisible] = useState(false);
     const scrollX = useRef(new Animated.Value(0)).current;
-    const { username, setUsername } = useUser();
-
+    const { user, setUser} = useUser();
+    const username = user.username ;
     // Animation values
     const fadeAnim = useState(new Animated.Value(0))[0];
     const slideAnim = useState(new Animated.Value(20))[0];

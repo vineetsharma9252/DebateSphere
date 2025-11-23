@@ -40,7 +40,9 @@ export default function Navbar() {
   const [showModal, setShowModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [userImage, setUserImage] = useState("");
-  const { username } = useUser();
+  const { user } = useUser();
+  const username = user.username ;
+  const profile_image = user.user_image ;
 
   const defaultImages = [
     { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Alex" },

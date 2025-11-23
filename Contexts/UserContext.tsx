@@ -7,11 +7,11 @@ export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(null); // Start with null
 
   const login = (userData) => {
-    setUsername(userData);
+    setUser(userData);
   };
 
   const logout = () => {
-    setUsername(null);
+    setUser(null);
   };
 
   return (
