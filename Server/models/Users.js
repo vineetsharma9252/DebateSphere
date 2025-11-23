@@ -1,8 +1,8 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
-const userSchema = mongoose.Schema({
+const userSchema = new mongoose.Schema({
   username: { type: String, required: true },
-  password: { type: String }, // Remove required: true for Google users
+  password: { type: String },
   email: { type: String, required: true },
   phone: { type: String },
   rank: { type: Number, default: 99999 },
@@ -18,4 +18,4 @@ const userSchema = mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
-export default User;
+module.exports = User; // Use CommonJS export
