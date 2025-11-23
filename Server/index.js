@@ -368,7 +368,6 @@ app.post('/api/create_room', async (req, res) => {
       title: title.trim(),
       desc: desc?.trim() || '',
       topic: topic.trim(),
-      createdBy,
       isActive: true,
       createdAt: new Date()
     });

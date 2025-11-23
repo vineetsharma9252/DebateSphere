@@ -6,7 +6,7 @@ const roomSchema = new mongoose.Schema({
   title: { type: String, required: true },
   desc: { type: String, default: "" },
   isActive: { type: Boolean, default: true },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now },
 });
 
