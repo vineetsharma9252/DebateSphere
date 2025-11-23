@@ -633,21 +633,39 @@ app.post("/signup", async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
   try {
-    const findUser = await User.findOne({ username }); // This should work now
-    if (!findUser) {
-      return res.status(401).json({ error: 'Invalid username or password' });
+    const { username, password } = req.body;
+
+    // Find user and validate password (your existing logic)
+    const user = await User.findOne({ username });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const isMatch = await bcrypt.compare(password, findUser.password);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
+    // Return complete user data (excluding password)
+    const userResponse = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      rank: user.rank,
+      created_at: user.created_at,
+      user_image: user.user_image,
+      desc: user.desc,
+      total_debates: user.total_debates,
+      debates_won: user.debates_won,
+      googleId: user.googleId,
+      profilePicture: user.profilePicture,
+      isVerified: user.isVerified
+    };
 
-    res.status(200).json({ message: 'Login successful', username: findUser.username });
+    res.status(200).json({
+      message: 'Login successful',
+      user: userResponse
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Server error', message: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

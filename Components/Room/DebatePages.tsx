@@ -273,7 +273,7 @@ export default function DebatePage() {
 
   const { topic: initialTopic } = route.params || {};
   const [selectedTopic, setSelectedTopic] = useState(initialTopic || 'All Topics');
-
+  console.log("User Data in Debate page "+user);
   // Animation values
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(50))[0];

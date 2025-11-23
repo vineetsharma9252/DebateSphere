@@ -60,7 +60,7 @@ export default function Profile() {
         { id: 'nerd_male_3', source: require("../assets/Nerd_male_3.png"), name: "John" },
     ];
 
-
+    console.log("User Details at profile page " + username) ;
 
     const fetchDetail = async (username) => {
         const response = await axios.post(BACKEND_URL + "/api/get_details", { username });

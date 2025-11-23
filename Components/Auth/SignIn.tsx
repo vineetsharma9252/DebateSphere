@@ -89,7 +89,13 @@ const SignIn = () => {
             const response = await axios.post(BACKEND_URL, { username, password });
 
             if (response.status === 200) {
-                login({ username: username });
+                login({
+                                    username: username,
+                                    // Add other user properties you get from the backend
+                                    id: response.data.userId || username, // Use actual ID from response if available
+                                    email: response.data.email || '',
+                                    // ... any other user data from your backend
+                                });
                 navigation.navigate("Dashboard", { username: username });
             } else {
                 alert("Something went wrong. Try again.");

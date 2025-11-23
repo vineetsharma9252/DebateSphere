@@ -4,10 +4,10 @@ import { createContext, useContext, useState } from 'react';
 const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
-  const [username, setUsername] = useState(null); // Start with null
+  const [user, setUser] = useState(null); // Start with null
 
   const login = (userData) => {
-    setUsername(userData.username);
+    setUsername(userData);
   };
 
   const logout = () => {
@@ -15,7 +15,7 @@ export const UserProvider = ({ children }) => {
   };
 
   return (
-    <UserContext.Provider value={{ username, setUsername, login, logout }}>
+    <UserContext.Provider value={{ user, setUser, login, logout }}>
       {children}
     </UserContext.Provider>
   );

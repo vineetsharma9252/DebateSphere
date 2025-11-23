@@ -44,7 +44,7 @@ const popularTopics = [
 ];
 
 export default function Dashboard() {
-  const { username } = useUser();
+  const { user } = useUser();
   const navigation = useNavigation();
   const [rooms, setRooms] = useState([]);
   const [activeRooms, setActiveRooms] = useState([]);
@@ -52,7 +52,7 @@ export default function Dashboard() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  console.log("Username at dashboard is " + username);
+  console.log("Username at dashboard is " + user.username);
 
   useEffect(() => {
     fetchAllRooms();
