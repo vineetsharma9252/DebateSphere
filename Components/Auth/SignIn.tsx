@@ -84,24 +84,38 @@ const SignIn = () => {
 
         setIsLoading(true);
         try {
-            console.log("Username at SignIn is " + username);
-            console.log("Password is " + password);
             const response = await axios.post(BACKEND_URL, { username, password });
+            console.log("Full response:", response.data);
 
             if (response.status === 200) {
-                login({
-                                    username: username,
-                                    id: response.data.id || username,
-                                    email: response.data.email || '',
-                                    user_image:response.data.user_image,
-                                });
-                navigation.navigate("Dashboard", { username: username });
+                let userData;
+
+                if (response.data.user) {
+                    userData = response.data.user;
+                } else {
+
+                    userData = {
+                        id: response.data.id || `user-${Date.now()}`,
+                        username: username,
+                        email: response.data.email || '',
+                        user_image: response.data.user_image || '',
+
+                    };
+                }
+
+
+                login(userData);
+                navigation.navigate("Dashboard");
             } else {
                 alert("Something went wrong. Try again.");
             }
         } catch (error) {
-            console.log("Login error:" + error);
-            alert("Login failed. Please check your credentials.");
+            console.log("Login error:", error);
+            if (error.response) {
+                alert(error.response.data.error || "Login failed. Please check your credentials.");
+            } else {
+                alert("Network error. Please try again.");
+            }
         } finally {
             setIsLoading(false);
         }
