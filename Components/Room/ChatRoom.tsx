@@ -124,19 +124,71 @@ export default function ChatRoom({ route }) {
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
-  const [userImages, setUserImages] = useState({}); // Store user images by username
+  const [userImages, setUserImages] = useState({}); // Store user images by user ID
   const { roomId, title, desc } = route.params;
   const { user } = useUser();
 
   const username = user?.username || 'Guest';
+  const userId = user?.id || '';
   const userImage = user?.user_image || '';
 
   console.log("User data in ChatRoom:", user);
+  console.log("User ID:", userId);
   console.log("Username:", username);
   console.log("User image:", userImage);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Function to fetch user image by user ID
+  const fetchUserImageById = async (targetUserId) => {
+    if (!targetUserId) return null;
+
+    try {
+      const response = await fetch(`${SERVER_URL}/api/get_user_by_id`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: targetUserId }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.user) {
+        return data.user.user_image || '';
+      }
+    } catch (error) {
+      console.error('Error fetching user image by ID:', error);
+    }
+
+    return null;
+  };
+
+  // Function to get user image from cache or fetch it
+  const getUserImage = async (messageUserId, messageUsername) => {
+    // If we already have the image in cache, return it
+    if (userImages[messageUserId]) {
+      return userImages[messageUserId];
+    }
+
+    // If it's the current user, return current user's image
+    if (messageUserId === userId) {
+      return userImage;
+    }
+
+    // Fetch user image from server
+    const fetchedUserImage = await fetchUserImageById(messageUserId);
+    if (fetchedUserImage) {
+      // Update cache
+      setUserImages(prev => ({
+        ...prev,
+        [messageUserId]: fetchedUserImage
+      }));
+      return fetchedUserImage;
+    }
+
+    return '';
+  };
 
   useEffect(() => {
     setIsConnecting(true);
@@ -169,51 +221,77 @@ export default function ChatRoom({ route }) {
       setIsConnected(false);
     });
 
-    socketRef.current.on('receive_message', (msg) => {
+    socketRef.current.on('receive_message', async (msg) => {
       console.log('Received message:', msg);
 
       // Handle both single message and array of messages
       if (Array.isArray(msg)) {
         // This is the initial batch of messages
-        const messagesWithIds = msg.map(message => ({
-          ...message,
-          id: message.id || generateMessageId(),
-          isDeleted: message.isDeleted || false
-        }));
-        setMessages(messagesWithIds);
+        const messagesWithIds = await Promise.all(
+          msg.map(async (message) => {
+            const messageUserId = message.userId || message.senderId;
+            let userImageToUse = '';
 
-        // Extract unique users and fetch their images
-        extractUserImages(messagesWithIds);
+            if (messageUserId) {
+              userImageToUse = await getUserImage(messageUserId, message.sender);
+            }
+
+            return {
+              ...message,
+              id: message.id || generateMessageId(),
+              isDeleted: message.isDeleted || false,
+              userId: messageUserId,
+              userImage: userImageToUse || message.userImage || ''
+            };
+          })
+        );
+
+        setMessages(messagesWithIds);
       } else {
         // This is a single new message
+        const messageUserId = msg.userId || msg.senderId;
+        let userImageToUse = '';
+
+        if (messageUserId) {
+          userImageToUse = await getUserImage(messageUserId, msg.sender);
+        }
+
         const messageWithId = {
           ...msg,
           id: msg.id || generateMessageId(),
-          isDeleted: msg.isDeleted || false
+          isDeleted: msg.isDeleted || false,
+          userId: messageUserId,
+          userImage: userImageToUse || msg.userImage || ''
         };
+
         setMessages((prev) => {
-          const newMessages = [messageWithId, ...prev];
-          // Update user images for new message
-          if (msg.sender && !userImages[msg.sender]) {
-            setUserImages(prevImages => ({
-              ...prevImages,
-              [msg.sender]: msg.userImage || ''
-            }));
-          }
-          return newMessages;
+          return [messageWithId, ...prev];
         });
       }
     });
 
-    socketRef.current.on('previous_messages', (msgs) => {
+    socketRef.current.on('previous_messages', async (msgs) => {
       if (Array.isArray(msgs)) {
-        const messagesWithIds = msgs.reverse().map(msg => ({
-          ...msg,
-          id: msg.id || generateMessageId(),
-          isDeleted: msg.isDeleted || false
-        }));
+        const messagesWithIds = await Promise.all(
+          msgs.reverse().map(async (msg) => {
+            const messageUserId = msg.userId || msg.senderId;
+            let userImageToUse = '';
+
+            if (messageUserId) {
+              userImageToUse = await getUserImage(messageUserId, msg.sender);
+            }
+
+            return {
+              ...msg,
+              id: msg.id || generateMessageId(),
+              isDeleted: msg.isDeleted || false,
+              userId: messageUserId,
+              userImage: userImageToUse || msg.userImage || ''
+            };
+          })
+        );
+
         setMessages(messagesWithIds);
-        extractUserImages(messagesWithIds);
       }
     });
 
@@ -235,13 +313,22 @@ export default function ChatRoom({ route }) {
     });
 
     // Handle user join/leave events to get user images
-    socketRef.current.on('user_joined', (userData) => {
+    socketRef.current.on('user_joined', async (userData) => {
       console.log('User joined:', userData);
-      if (userData.username && userData.userImage) {
+      if (userData.userId && userData.userImage) {
         setUserImages(prev => ({
           ...prev,
-          [userData.username]: userData.userImage
+          [userData.userId]: userData.userImage
         }));
+      } else if (userData.userId) {
+        // Fetch user image if not provided
+        const fetchedImage = await fetchUserImageById(userData.userId);
+        if (fetchedImage) {
+          setUserImages(prev => ({
+            ...prev,
+            [userData.userId]: fetchedImage
+          }));
+        }
       }
     });
 
@@ -254,18 +341,7 @@ export default function ChatRoom({ route }) {
         socketRef.current.disconnect();
       }
     };
-  }, [roomId]);
-
-  // Extract user images from messages
-  const extractUserImages = (messages) => {
-    const userImageMap = {};
-    messages.forEach(msg => {
-      if (msg.sender && msg.userImage) {
-        userImageMap[msg.sender] = msg.userImage;
-      }
-    });
-    setUserImages(prev => ({ ...prev, ...userImageMap }));
-  };
+  }, [roomId, userId]);
 
   useEffect(() => {
     // Fade in animation
@@ -322,6 +398,7 @@ export default function ChatRoom({ route }) {
       text: messageText,
       image: imageData,
       sender: username,
+      userId: userId, // Include user ID in message data
       userImage: userImage, // Include user image in message data
       roomId,
       time: new Date().toISOString(),
@@ -469,7 +546,8 @@ export default function ChatRoom({ route }) {
     socketRef.current.emit('delete_message', {
       messageId: messageToDelete.id,
       roomId: roomId,
-      username: username
+      username: username,
+      userId: userId
     }, (ack) => {
       console.log('Delete ACK:', ack);
       if (ack && ack.success) {
@@ -515,8 +593,13 @@ export default function ChatRoom({ route }) {
   };
 
   const renderMessage = ({ item }) => {
-    const isMyMessage = item.sender === username;
-    const messageUserImage = item.userImage || userImages[item.sender] || '';
+    const isMyMessage = item.userId === userId;
+    const messageUserImage = item.userImage || userImages[item.userId] || '';
+
+    console.log("Message User ID:", item.userId);
+    console.log("My User ID:", userId);
+    console.log("Is My Message:", isMyMessage);
+    console.log("Message User Image:", messageUserImage);
 
     return (
       <Animated.View
@@ -707,7 +790,7 @@ export default function ChatRoom({ route }) {
           data={messages}
           inverted
           keyExtractor={(item, index) =>
-            item.id?.toString() || `${item.time}-${item.sender}-${index}`
+            item.id?.toString() || `${item.time}-${item.userId}-${index}`
           }
           renderItem={renderMessage}
           showsVerticalScrollIndicator={false}
@@ -816,6 +899,7 @@ export default function ChatRoom({ route }) {
     </KeyboardAvoidingView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

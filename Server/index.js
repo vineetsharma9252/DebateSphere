@@ -333,6 +333,38 @@ io.on("connection", (socket) => {
 });
 
 // REST API routes
+// Backend endpoint to get user by ID
+
+app.post('/api/get_user_by_id', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const user = await User.findById(userId);
+
+    if (user) {
+      res.json({
+        success: true,
+        user: {
+          id: user._id,
+          username: user.username,
+          user_image: user.user_image
+        }
+      });
+    } else {
+      res.json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching user by ID:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+
 app.get('/api/online_users', (req, res) => {
   res.json({
     onlineCount: onlineUsers.size,
