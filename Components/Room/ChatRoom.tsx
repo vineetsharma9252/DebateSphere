@@ -230,9 +230,10 @@ export default function ChatRoom({ route }) {
         const messagesWithIds = await Promise.all(
           msg.map(async (message) => {
             const messageUserId = message.userId || message.senderId;
-            let userImageToUse = '';
+            let userImageToUse = message.userImage || '';
 
-            if (messageUserId) {
+            // If userImage is not provided in the message, try to fetch it
+            if (!userImageToUse && messageUserId) {
               userImageToUse = await getUserImage(messageUserId, message.sender);
             }
 
@@ -241,7 +242,7 @@ export default function ChatRoom({ route }) {
               id: message.id || generateMessageId(),
               isDeleted: message.isDeleted || false,
               userId: messageUserId,
-              userImage: userImageToUse || message.userImage || ''
+              userImage: userImageToUse
             };
           })
         );
@@ -250,9 +251,10 @@ export default function ChatRoom({ route }) {
       } else {
         // This is a single new message
         const messageUserId = msg.userId || msg.senderId;
-        let userImageToUse = '';
+        let userImageToUse = msg.userImage || '';
 
-        if (messageUserId) {
+        // If userImage is not provided in the message, try to fetch it
+        if (!userImageToUse && messageUserId) {
           userImageToUse = await getUserImage(messageUserId, msg.sender);
         }
 
@@ -261,7 +263,7 @@ export default function ChatRoom({ route }) {
           id: msg.id || generateMessageId(),
           isDeleted: msg.isDeleted || false,
           userId: messageUserId,
-          userImage: userImageToUse || msg.userImage || ''
+          userImage: userImageToUse
         };
 
         setMessages((prev) => {
@@ -275,9 +277,10 @@ export default function ChatRoom({ route }) {
         const messagesWithIds = await Promise.all(
           msgs.reverse().map(async (msg) => {
             const messageUserId = msg.userId || msg.senderId;
-            let userImageToUse = '';
+            let userImageToUse = msg.userImage || '';
 
-            if (messageUserId) {
+            // If userImage is not provided in the message, try to fetch it
+            if (!userImageToUse && messageUserId) {
               userImageToUse = await getUserImage(messageUserId, msg.sender);
             }
 
@@ -286,7 +289,7 @@ export default function ChatRoom({ route }) {
               id: msg.id || generateMessageId(),
               isDeleted: msg.isDeleted || false,
               userId: messageUserId,
-              userImage: userImageToUse || msg.userImage || ''
+              userImage: userImageToUse
             };
           })
         );
@@ -394,19 +397,27 @@ export default function ChatRoom({ route }) {
   };
 
   const proceedWithMessage = (messageText, imageData, isAIDetected = false) => {
+    // Ensure we have the user image
+    const currentUserImage = user?.user_image || userImage || '';
+
     const messageData = {
       text: messageText,
       image: imageData,
       sender: username,
-      userId: userId, // Include user ID in message data
-      userImage: userImage, // Include user image in message data
+      userId: userId,
+      userImage: currentUserImage, // Make sure this is included
       roomId,
       time: new Date().toISOString(),
       aiDetected: isAIDetected,
       aiConfidence: isAIDetected ? pendingMessage?.aiDetection?.confidence : 0
     };
 
-    console.log('Sending message:', messageData);
+    console.log('Sending message with user image:', {
+      username,
+      userId,
+      userImage: currentUserImage,
+      fullMessage: messageData
+    });
 
     socketRef.current.emit('send_message', messageData, (ack) => {
       console.log('Server ACK:', ack);
@@ -596,10 +607,13 @@ export default function ChatRoom({ route }) {
     const isMyMessage = item.userId === userId;
     const messageUserImage = item.userImage || userImages[item.userId] || '';
 
-    console.log("Message User ID:", item.userId);
-    console.log("My User ID:", userId);
-    console.log("Is My Message:", isMyMessage);
-    console.log("Message User Image:", messageUserImage);
+    console.log("Rendering message - User Image:", {
+      messageId: item.id,
+      sender: item.sender,
+      userId: item.userId,
+      userImage: messageUserImage,
+      hasUserImage: !!messageUserImage
+    });
 
     return (
       <Animated.View
@@ -899,6 +913,7 @@ export default function ChatRoom({ route }) {
     </KeyboardAvoidingView>
   );
 }
+
 
 
 const styles = StyleSheet.create({

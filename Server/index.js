@@ -20,14 +20,16 @@ mongoose
 
 // Message Schema for storing messages and images
 const messageSchema = new mongoose.Schema({
-  text: { type: String, default: "" },
-  image: { type: String, default: "" },
-  sender: { type: String, required: true },
-  roomId: { type: String, required: true },
-  time: { type: Date, default: Date.now },
-  isDeleted: { type: Boolean, default: false },
-  deletedAt: { type: Date },
-  deletedBy: { type: String },
+    text: String,
+    image: String,
+    sender: String,
+    userId: String,        // Add this field
+    userImage: String,     // Add this field
+    roomId: String,
+    time: Date,
+    isDeleted: Boolean,
+    aiDetected: Boolean,   // Add this field
+    aiConfidence: Number   // Add this field
 });
 
 const generateToken = (user) => {
@@ -114,48 +116,77 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("send_message", async (data, callback) => {
+socket.on("send_message", async (data, callback) => {
     console.log(`💬 Message from ${data.sender} in room ${data.roomId}: ${data.text || "Image"}`);
+    console.log("Message data received:", {
+        sender: data.sender,
+        userId: data.userId,
+        userImage: data.userImage,
+        roomId: data.roomId,
+        hasText: !!data.text,
+        hasImage: !!data.image
+    });
 
     if (data.image) {
-      if (!data.image.startsWith("data:image/")) {
-        if (callback) callback({ status: "error", error: "Invalid image format" });
-        return;
-      }
-      if (data.image.length > 7 * 1024 * 1024) {
-        if (callback) callback({ status: "error", error: "Image size exceeds 5MB" });
-        return;
-      }
+        if (!data.image.startsWith("data:image/")) {
+            if (callback) callback({ status: "error", error: "Invalid image format" });
+            return;
+        }
+        if (data.image.length > 7 * 1024 * 1024) {
+            if (callback) callback({ status: "error", error: "Image size exceeds 5MB" });
+            return;
+        }
     }
 
     try {
-      const messageData = {
-        text: data.text || "",
-        image: data.image || "",
-        sender: data.sender,
-        roomId: data.roomId,
-        time: new Date(data.time),
-        isDeleted: false,
-      };
-      const savedMessage = await new Message(messageData).save();
+        const messageData = {
+            text: data.text || "",
+            image: data.image || "",
+            sender: data.sender,
+            userId: data.userId || "", // Add userId
+            userImage: data.userImage || "", // Add userImage
+            roomId: data.roomId,
+            time: new Date(data.time),
+            isDeleted: false,
+            aiDetected: data.aiDetected || false, // Add AI detection fields
+            aiConfidence: data.aiConfidence || 0
+        };
 
-      const broadcastMessage = {
-        id: savedMessage._id.toString(),
-        text: savedMessage.text,
-        image: savedMessage.image,
-        sender: savedMessage.sender,
-        roomId: savedMessage.roomId,
-        time: savedMessage.time.toISOString(),
-        isDeleted: false,
-      };
-      io.to(data.roomId).emit("receive_message", broadcastMessage);
+        console.log("Saving message with user data:", {
+            userId: messageData.userId,
+            userImage: messageData.userImage,
+            sender: messageData.sender
+        });
 
-      if (callback) callback({ status: "ok", id: savedMessage._id });
+        const savedMessage = await new Message(messageData).save();
+
+        const broadcastMessage = {
+            id: savedMessage._id.toString(),
+            text: savedMessage.text,
+            image: savedMessage.image,
+            sender: savedMessage.sender,
+            userId: savedMessage.userId, // Include userId in broadcast
+            userImage: savedMessage.userImage, // Include userImage in broadcast
+            roomId: savedMessage.roomId,
+            time: savedMessage.time.toISOString(),
+            isDeleted: false,
+            aiDetected: savedMessage.aiDetected,
+            aiConfidence: savedMessage.aiConfidence
+        };
+
+        console.log("Broadcasting message with user data:", {
+            userId: broadcastMessage.userId,
+            userImage: broadcastMessage.userImage
+        });
+
+        io.to(data.roomId).emit("receive_message", broadcastMessage);
+
+        if (callback) callback({ status: "ok", id: savedMessage._id });
     } catch (err) {
-      console.error("Error saving message:", err);
-      if (callback) callback({ status: "error", error: err.message });
+        console.error("Error saving message:", err);
+        if (callback) callback({ status: "error", error: err.message });
     }
-  });
+});
 
   socket.on("delete_message", async (data, callback) => {
     const { messageId, roomId, username } = data;
