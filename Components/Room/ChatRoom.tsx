@@ -15,13 +15,22 @@ import {
   Modal,
   Animated,
 } from 'react-native';
-import io from 'socket.io-client';
+import io from 'socket.io-client' ;
 import { useUser } from "../../Contexts/UserContext";
 import { useRoute } from '@react-navigation/native';
 import AIDetectionService from '../services/AIDetectionService';
 import AIContentWarning from '../warning/AIContentWarning';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com/';
+
+// Default images array (same as in your other components)
+const defaultImages = [
+  { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Alex" },
+  { id: 'nerd_male_2', source: require("../assets/Nerd_male_2.png"), name: "James" },
+  { id: 'nerd_female_1', source: require("../assets/Nerd_female.png"), name: "Tina" },
+  { id: 'nerd_female_2', source: require("../assets/Nerd_female_2.png"), name: "Jasmine" },
+  { id: 'nerd_male_3', source: require("../assets/Nerd_male_3.png"), name: "John" },
+];
 
 function ImageUploader({ onImageSelected, disabled }) {
   const fileInputRef = useRef(null);
@@ -85,6 +94,22 @@ function ImageUploader({ onImageSelected, disabled }) {
   );
 }
 
+// Function to get user image source
+const getUserImageSource = (userImage) => {
+  if (!userImage) {
+    return defaultImages[0].source;
+  }
+
+  // Check if it's a default image
+  const defaultImage = defaultImages.find(img => img.id === userImage);
+  if (defaultImage) {
+    return defaultImage.source;
+  }
+
+  // Fallback to first default image
+  return defaultImages[0].source;
+};
+
 export default function ChatRoom({ route }) {
   const socketRef = useRef(null);
   const flatListRef = useRef(null);
@@ -99,9 +124,16 @@ export default function ChatRoom({ route }) {
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
+  const [userImages, setUserImages] = useState({}); // Store user images by username
   const { roomId, title, desc } = route.params;
-  const { username } = useUser();
-  console.log("Username is " + username);
+  const { user } = useUser();
+
+  const username = user?.username || 'Guest';
+  const userImage = user?.user_image || '';
+
+  console.log("User data in ChatRoom:", user);
+  console.log("Username:", username);
+  console.log("User image:", userImage);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -149,6 +181,9 @@ export default function ChatRoom({ route }) {
           isDeleted: message.isDeleted || false
         }));
         setMessages(messagesWithIds);
+
+        // Extract unique users and fetch their images
+        extractUserImages(messagesWithIds);
       } else {
         // This is a single new message
         const messageWithId = {
@@ -157,7 +192,15 @@ export default function ChatRoom({ route }) {
           isDeleted: msg.isDeleted || false
         };
         setMessages((prev) => {
-          return [messageWithId, ...prev];
+          const newMessages = [messageWithId, ...prev];
+          // Update user images for new message
+          if (msg.sender && !userImages[msg.sender]) {
+            setUserImages(prevImages => ({
+              ...prevImages,
+              [msg.sender]: msg.userImage || ''
+            }));
+          }
+          return newMessages;
         });
       }
     });
@@ -170,6 +213,7 @@ export default function ChatRoom({ route }) {
           isDeleted: msg.isDeleted || false
         }));
         setMessages(messagesWithIds);
+        extractUserImages(messagesWithIds);
       }
     });
 
@@ -190,6 +234,17 @@ export default function ChatRoom({ route }) {
       }
     });
 
+    // Handle user join/leave events to get user images
+    socketRef.current.on('user_joined', (userData) => {
+      console.log('User joined:', userData);
+      if (userData.username && userData.userImage) {
+        setUserImages(prev => ({
+          ...prev,
+          [userData.username]: userData.userImage
+        }));
+      }
+    });
+
     socketRef.current.onAny((eventName, ...args) => {
       console.log('Socket event:', eventName, args);
     });
@@ -200,6 +255,17 @@ export default function ChatRoom({ route }) {
       }
     };
   }, [roomId]);
+
+  // Extract user images from messages
+  const extractUserImages = (messages) => {
+    const userImageMap = {};
+    messages.forEach(msg => {
+      if (msg.sender && msg.userImage) {
+        userImageMap[msg.sender] = msg.userImage;
+      }
+    });
+    setUserImages(prev => ({ ...prev, ...userImageMap }));
+  };
 
   useEffect(() => {
     // Fade in animation
@@ -255,7 +321,8 @@ export default function ChatRoom({ route }) {
     const messageData = {
       text: messageText,
       image: imageData,
-      sender: username || 'Guest',
+      sender: username,
+      userImage: userImage, // Include user image in message data
       roomId,
       time: new Date().toISOString(),
       aiDetected: isAIDetected,
@@ -447,89 +514,117 @@ export default function ChatRoom({ route }) {
     setSelectedMessage(null);
   };
 
-  const renderMessage = ({ item }) => (
-    <Animated.View
-      style={[
-        styles.msgContainer,
-        item.sender === username && styles.myMsgContainer,
-        { opacity: fadeAnim }
-      ]}
-    >
-      <TouchableOpacity
+  const renderMessage = ({ item }) => {
+    const isMyMessage = item.sender === username;
+    const messageUserImage = item.userImage || userImages[item.sender] || '';
+
+    return (
+      <Animated.View
         style={[
-          styles.msgBox,
-          item.sender === username ? styles.myMsg : styles.theirMsg,
-          item.isSystem && styles.systemMsg,
-          item.isDeleted && styles.deletedMsg,
-          item.aiDetected && styles.aiDetectedMsg,
+          styles.msgContainer,
+          isMyMessage && styles.myMsgContainer,
+          { opacity: fadeAnim }
         ]}
-        onLongPress={() => handleMessageLongPress(item)}
-        delayLongPress={500}
-        activeOpacity={0.7}
       >
-        {!item.isSystem && item.sender !== username && !item.isDeleted && (
-          <Text style={styles.msgUser}>
-            {item.sender}
-          </Text>
-        )}
-
-        {item.aiDetected && (
-          <View style={styles.aiWarningBadge}>
-            <Text style={styles.aiWarningText}>🤖 AI Detected</Text>
+        {/* User Avatar for other users' messages */}
+        {!isMyMessage && !item.isSystem && !item.isDeleted && (
+          <View style={styles.userAvatarContainer}>
+            <Image
+              source={getUserImageSource(messageUserImage)}
+              style={styles.userAvatar}
+            />
           </View>
         )}
 
-        {item.isDeleted ? (
-          <View style={styles.deletedContent}>
-            <Text style={styles.deletedIcon}>🗑️</Text>
-            <Text style={styles.deletedText}>
-              This message was deleted
-            </Text>
-          </View>
-        ) : (
-          <>
-            {item.text && (
-              <Text
-                style={[
-                  styles.msgText,
-                  item.sender === username && styles.myMsgText,
-                  item.isSystem && styles.systemMsgText,
-                ]}
-              >
-                {item.text}
+        <TouchableOpacity
+          style={[
+            styles.msgBox,
+            isMyMessage ? styles.myMsg : styles.theirMsg,
+            item.isSystem && styles.systemMsg,
+            item.isDeleted && styles.deletedMsg,
+            item.aiDetected && styles.aiDetectedMsg,
+          ]}
+          onLongPress={() => handleMessageLongPress(item)}
+          delayLongPress={500}
+          activeOpacity={0.7}
+        >
+          {/* User info for other users' messages */}
+          {!item.isSystem && !isMyMessage && !item.isDeleted && (
+            <View style={styles.msgUserInfo}>
+              <Text style={styles.msgUser}>
+                {item.sender}
               </Text>
-            )}
-            {item.image && (
-              <Image
-                source={{ uri: item.image }}
-                style={styles.msgImage}
-                resizeMode="cover"
-              />
-            )}
-          </>
-        )}
+            </View>
+          )}
 
-        <Text style={[
-          styles.msgTime,
-          item.sender === username && styles.myMsgTime,
-          item.isDeleted && styles.deletedMsgTime
-        ]}>
-          {new Date(item.time).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-          {item.isDeleted && ' • Deleted'}
-        </Text>
+          {item.aiDetected && (
+            <View style={styles.aiWarningBadge}>
+              <Text style={styles.aiWarningText}>🤖 AI Detected</Text>
+            </View>
+          )}
 
-        {/* Edit/Delete indicator for user's messages */}
-        {item.sender === username && !item.isSystem && !item.isDeleted && (
-          <View style={styles.messageOptionsIndicator}>
-            <Text style={styles.optionsHint}>Long press for options</Text>
+          {item.isDeleted ? (
+            <View style={styles.deletedContent}>
+              <Text style={styles.deletedIcon}>🗑️</Text>
+              <Text style={styles.deletedText}>
+                This message was deleted
+              </Text>
+            </View>
+          ) : (
+            <>
+              {item.text && (
+                <Text
+                  style={[
+                    styles.msgText,
+                    isMyMessage && styles.myMsgText,
+                    item.isSystem && styles.systemMsgText,
+                  ]}
+                >
+                  {item.text}
+                </Text>
+              )}
+              {item.image && (
+                <Image
+                  source={{ uri: item.image }}
+                  style={styles.msgImage}
+                  resizeMode="cover"
+                />
+              )}
+            </>
+          )}
+
+          <Text style={[
+            styles.msgTime,
+            isMyMessage && styles.myMsgTime,
+            item.isDeleted && styles.deletedMsgTime
+          ]}>
+            {new Date(item.time).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+            {item.isDeleted && ' • Deleted'}
+          </Text>
+
+          {/* Edit/Delete indicator for user's messages */}
+          {isMyMessage && !item.isSystem && !item.isDeleted && (
+            <View style={styles.messageOptionsIndicator}>
+              <Text style={styles.optionsHint}>Long press for options</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* User Avatar for my messages (on the right) */}
+        {isMyMessage && !item.isSystem && !item.isDeleted && (
+          <View style={styles.userAvatarContainer}>
+            <Image
+              source={getUserImageSource(userImage)}
+              style={styles.userAvatar}
+            />
           </View>
         )}
-      </TouchableOpacity>
-    </Animated.View>
-  );
+      </Animated.View>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
@@ -559,7 +654,10 @@ export default function ChatRoom({ route }) {
             </Text>
           </View>
           <View style={styles.userBadge}>
-            <Text style={styles.userBadgeText}>{username?.charAt(0)?.toUpperCase()}</Text>
+            <Image
+              source={getUserImageSource(userImage)}
+              style={styles.userBadgeImage}
+            />
           </View>
         </View>
 
@@ -766,11 +864,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  userBadgeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
+  userBadgeImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
   connectionIndicator: {
     flexDirection: 'row',
@@ -834,16 +933,30 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   msgContainer: {
-    marginVertical: 4,
+    marginVertical: 8,
     flexDirection: 'row',
+    alignItems: 'flex-end',
   },
   myMsgContainer: {
     justifyContent: 'flex-end',
   },
+  userAvatarContainer: {
+    width: 32,
+    height: 32,
+    marginHorizontal: 8,
+    marginBottom: 4,
+  },
+  userAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
   msgBox: {
     padding: 16,
     borderRadius: 20,
-    maxWidth: '80%',
+    maxWidth: '70%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -876,10 +989,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#dc2626',
   },
+  msgUserInfo: {
+    marginBottom: 6,
+  },
   msgUser: {
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 6,
     color: '#475569',
   },
   msgText: {

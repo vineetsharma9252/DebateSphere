@@ -39,10 +39,14 @@ export default function Navbar() {
   const [filteredRooms, setFilteredRooms] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [userImage, setUserImage] = useState("");
   const { user } = useUser();
-  const username = user.username ;
-  const profile_image = user.user_image ;
+
+  console.log("Full user data in Navbar:", user); // Debug log
+
+  const username = user?.username || 'User';
+  const profile_image = user?.user_image || '';
+
+  console.log("Profile Image from context:", profile_image);
 
   const defaultImages = [
     { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Alex" },
@@ -53,11 +57,18 @@ export default function Navbar() {
   ];
 
   const getImageSource = () => {
-    if (!userImage) {
-      return defaultImages[0].source;
+    // If we have a profile_image from context, try to find it in default images
+    if (profile_image) {
+      const defaultImage = defaultImages.find(img => img.id === profile_image);
+      if (defaultImage) {
+        console.log("Found default image:", defaultImage.id);
+        return defaultImage.source;
+      }
     }
-    const defaultImage = defaultImages.find(img => img.id === userImage);
-    return defaultImage ? defaultImage.source : defaultImages[0].source;
+
+    // Fallback to first default image
+    console.log("Using fallback default image");
+    return defaultImages[0].source;
   };
 
   useEffect(() => {
@@ -80,14 +91,6 @@ export default function Navbar() {
             });
           setAllRooms(validRooms);
           setFilteredRooms(validRooms);
-          console.log("Loaded rooms:", validRooms.map(room => ({
-            roomId: room.roomId,
-            title: room.title,
-            topic: room.topic,
-            desc: room.desc,
-            isActive: room.isActive,
-            createdAt: room.createdAt
-          })));
         } else {
           setAllRooms([]);
           setFilteredRooms([]);
@@ -102,22 +105,8 @@ export default function Navbar() {
       }
     };
 
-    const fetchImage = async () => {
-      try {
-        const response = await axios.post("https://debatesphere-11.onrender.com/api/get_details", { username });
-        if (response.data && response.data.user_data) {
-          setUserImage(response.data.user_data.user_image);
-        }
-      } catch (error) {
-        console.error("Error fetching user image:", error);
-      }
-    };
-
-    if (username) {
-      fetchImage();
-    }
     fetchRooms();
-  }, [username]);
+  }, []);
 
   useEffect(() => {
     const searchTerm = search.toLowerCase().trim();
@@ -134,14 +123,6 @@ export default function Navbar() {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
     setFilteredRooms(results);
-    console.log("Filtered rooms:", results.map(room => ({
-      roomId: room.roomId,
-      title: room.title,
-      topic: room.topic,
-      desc: room.desc,
-      isActive: room.isActive,
-      createdAt: room.createdAt
-    })));
   }, [search, allRooms]);
 
   const handleMenuPress = () => {
@@ -153,7 +134,7 @@ export default function Navbar() {
   };
 
   const handleHomePress = () => {
-    navigation.navigate('Home');
+    navigation.navigate('Dashboard');
     setSearch("");
     setShowModal(false);
   };
@@ -172,7 +153,7 @@ export default function Navbar() {
     }
 
     navigation.navigate('ChatRoom', {
-      username: username || 'User',
+      username: username,
       roomId: roomId,
       title: room.title || 'Untitled Room',
       topic: room.topic || 'General',
@@ -231,16 +212,6 @@ export default function Navbar() {
     }
     return <Text style={styles.noResultsText}>No debates found</Text>;
   };
-
-  // Log filteredRooms when rendering modal
-  console.log("Rendering modal with filteredRooms:", filteredRooms.map(room => ({
-    roomId: room.roomId,
-    title: room.title,
-    topic: room.topic,
-    desc: room.desc,
-    isActive: room.isActive,
-    createdAt: room.createdAt
-  })));
 
   return (
     <View style={styles.container}>
@@ -432,8 +403,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     marginHorizontal: 20,
     borderRadius: 20,
-    minHeight: 200, // Ensure modal has enough space
-    maxHeight: '80%', // Increased to ensure visibility
+    minHeight: 200,
+    maxHeight: '80%',
     borderWidth: 1,
     borderColor: '#f1f5f9',
     shadowColor: '#000',
@@ -472,7 +443,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   resultsListContent: {
-    paddingBottom: 20, // Ensure content isn't cut off
+    paddingBottom: 20,
   },
   roomCard: {
     flexDirection: 'row',

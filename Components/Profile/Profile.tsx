@@ -15,6 +15,7 @@ import {
   StatusBar
 } from 'react-native';
 import { Divider } from "react-native-elements";
+import { useNavigation } from 'react-native';
 import PropTypes from "prop-types";
 const { width } = Dimensions.get('window');
 import axios from 'axios';
@@ -45,8 +46,9 @@ export default function Profile() {
     const [details, setDetails] = useState({});
     const [imageModalVisible, setImageModalVisible] = useState(false);
     const scrollX = useRef(new Animated.Value(0)).current;
-    const { user, setUser} = useUser();
-    const username = user.username ;
+    const { user, updateUser ,logout } = useUser(); // Use updateUser instead of setUser
+    const username = user?.username || '';
+    const navigation = useNavigation ;
     // Animation values
     const fadeAnim = useState(new Animated.Value(0))[0];
     const slideAnim = useState(new Animated.Value(20))[0];
@@ -60,14 +62,31 @@ export default function Profile() {
         { id: 'nerd_male_3', source: require("../assets/Nerd_male_3.png"), name: "John" },
     ];
 
-    console.log("User Details at profile page " + username) ;
+    console.log("User Details at profile page:", user);
 
     const fetchDetail = async (username) => {
-        const response = await axios.post(BACKEND_URL + "/api/get_details", { username });
-        console.log("Response is " + response.data.user_data);
-        setDetails(response.data.user_data);
-        setDesc(response.data.user_data.desc);
-        console.log("Details are ", details);
+        try {
+            const response = await axios.post(BACKEND_URL + "/api/get_details", { username });
+            console.log("Response data:", response.data);
+            if (response.data && response.data.user_data) {
+                const userData = response.data.user_data;
+                setDetails(userData);
+                setDesc(userData.desc || "");
+
+                // Update UserContext with the latest user data
+                updateUser({
+                    ...user,
+                    user_image: userData.user_image,
+                    desc: userData.desc,
+                    total_debates: userData.total_debates,
+                    debates_won: userData.debates_won,
+                    rank: userData.rank
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching user details:", error);
+            Alert.alert('Error', 'Failed to load user details');
+        }
     };
 
     useEffect(() => {
@@ -94,12 +113,14 @@ export default function Profile() {
 
     // Function to get image source based on user_image string
     const getImageSource = () => {
-        if (!details.user_image) {
+        const userImage = details.user_image || user?.user_image;
+
+        if (!userImage) {
             return defaultImages[0].source;
         }
 
         // Check if it's a default image
-        const defaultImage = defaultImages.find(img => img.id === details.user_image);
+        const defaultImage = defaultImages.find(img => img.id === userImage);
         if (defaultImage) {
             return defaultImage.source;
         }
@@ -112,6 +133,12 @@ export default function Profile() {
         try {
             await axios.put(BACKEND_URL + "/api/update_user_image", {
                 username: username,
+                user_image: imageId
+            });
+
+            // Update UserContext immediately
+            updateUser({
+                ...user,
                 user_image: imageId
             });
 
@@ -186,21 +213,31 @@ export default function Profile() {
     const handleEditingDesc = async () => {
         try {
             await axios.put(BACKEND_URL + "/api/update_desc", { username, desc });
+
+            // Update UserContext immediately
+            updateUser({
+                ...user,
+                desc: desc
+            });
+
             setEdit(false);
             console.log("Description updated successfully");
             Alert.alert('Success', 'Description updated successfully!');
+
+            // Refresh details to ensure consistency
+            await fetchDetail(username);
         } catch (error) {
             console.error("Error updating description:", error);
             Alert.alert('Error', 'Failed to update description');
         }
     };
 
-    // Sample stats data
+    // Sample stats data - prioritize details from API, fallback to user context
     const stats = {
-        totalDebates: details.total_debates || 0,
-        debatesWon: details.debates_won || 0,
-        winRate: ((details.debates_won || 0) / ((details.total_debates || 0) + 1) * 100).toFixed(1),
-        ranking: details.rank || 'N/A'
+        totalDebates: details.total_debates || user?.total_debates || 0,
+        debatesWon: details.debates_won || user?.debates_won || 0,
+        winRate: ((details.debates_won || user?.debates_won || 0) / ((details.total_debates || user?.total_debates || 0) + 1) * 100).toFixed(1),
+        ranking: details.rank || user?.rank || 'N/A'
     };
 
     // Sample achievements data
@@ -219,7 +256,7 @@ export default function Profile() {
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+             <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
             {renderImageModal()}
 
             <ScrollView
@@ -342,7 +379,7 @@ export default function Profile() {
                             </View>
                         ) : (
                             <Text style={styles.descriptionText}>
-                                {desc || "No description available. Tap the edit icon to add one."}
+                                {desc || user?.desc || "No description available. Tap the edit icon to add one."}
                             </Text>
                         )}
                     </View>
@@ -427,6 +464,41 @@ export default function Profile() {
                         ))}
                     </View>
                 </Animated.View>
+                <Animated.View
+                        style={[
+                          styles.sectionContainer,
+                          {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                          }
+                        ]}
+                      >
+                        <Text style={styles.sectionTitle}>🔒 Account</Text>
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={() => {
+                            Alert.alert(
+                              'Logout',
+                              'Are you sure you want to logout?',
+                              [
+                                {
+                                  text: 'Cancel',
+                                  style: 'cancel',
+                                },
+                                {
+                                  text: 'Logout',
+                                  style: 'destructive',
+                                  onPress: () => {
+                                    logout();
+                                  },
+                                },
+                              ]
+                            );
+                          }}
+                        >
+                          <Text style={styles.logoutButtonText}>Logout</Text>
+                        </TouchableOpacity>
+                      </Animated.View>
             </ScrollView>
         </View>
     );
@@ -807,6 +879,26 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
     },
+// Add these styles to your existing StyleSheet in the Profile component
+logoutButton: {
+  backgroundColor: '#fef2f2',
+  padding: 16,
+  borderRadius: 16,
+  alignItems: 'center',
+  borderWidth: 1,
+  borderColor: '#fecaca',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 8,
+  elevation: 3,
+  marginTop: 8,
+},
+logoutButtonText: {
+  color: '#dc2626',
+  fontSize: 16,
+  fontWeight: 'bold',
+},
 });
 
 Profile.propTypes = {

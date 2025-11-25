@@ -103,9 +103,8 @@ const SignIn = () => {
                     };
                 }
 
-
                 login(userData);
-                navigation.navigate("Dashboard");
+//                 navigation.navigate("Dashboard");
             } else {
                 alert("Something went wrong. Try again.");
             }

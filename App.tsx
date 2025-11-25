@@ -1,4 +1,4 @@
-// App.js
+// App.js (Simpler Version)
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -13,34 +13,56 @@ import Notification from './Components/Profile/Notification';
 import Contact from './Components/Contact/Contact';
 import ChatRoom from './Components/Room/ChatRoom';
 import DebatePage from './Components/Room/DebatePages';
-import { UserProvider, useUser } from './Contexts/UserContext'; // Fixed import
-import LoadingScreen from './Components/loading/LoadingScreen'; // Fixed import
+import { UserProvider, useUser } from './Contexts/UserContext';
+import LoadingScreen from './Components/loading/LoadingScreen';
 
-// Wrapper for screens with Navbar
-function MainScreen({ component: Component, navigation, route }) {
-  return (
-    <View style={styles.container}>
-      <Navbar navigation={navigation} />
-      <View style={styles.content}>
-        <Component navigation={navigation} route={route} />
-      </View>
+// Create wrapper components directly
+const DashboardWithNavbar = ({ navigation, route }) => (
+  <View style={styles.container}>
+    <Navbar navigation={navigation} />
+    <View style={styles.content}>
+      <Dashboard navigation={navigation} route={route} />
     </View>
-  );
-}
+  </View>
+);
 
-// Wrapper for DebatePage to pass topic and username as props
-function DebatePageWrapper({ navigation, route }) {
+const NotificationWithNavbar = ({ navigation, route }) => (
+  <View style={styles.container}>
+    <Navbar navigation={navigation} />
+    <View style={styles.content}>
+      <Notification navigation={navigation} route={route} />
+    </View>
+  </View>
+);
+
+const ContactWithNavbar = ({ navigation, route }) => (
+  <View style={styles.container}>
+    <Navbar navigation={navigation} />
+    <View style={styles.content}>
+      <Contact navigation={navigation} route={route} />
+    </View>
+  </View>
+);
+
+// Profile without Navbar
+const ProfileWithoutNavbar = ({ navigation, route }) => (
+  <View style={styles.container}>
+    <View style={styles.content}>
+      <Profile navigation={navigation} route={route} />
+    </View>
+  </View>
+);
+
+const DebatePageWrapper = ({ navigation, route }) => {
   const { topic, username } = route.params || {};
   return <DebatePage topic={topic} username={username} navigation={navigation} />;
-}
+};
 
 const Stack = createStackNavigator();
 
-// Separate navigator component to use the hook
 function AppNavigator() {
   const { user, isLoading } = useUser();
 
-  // Show loading screen while checking authentication state
   if (isLoading) {
     return <LoadingScreen />;
   }
@@ -48,32 +70,27 @@ function AppNavigator() {
   return (
     <Stack.Navigator>
       {user ? (
-        // User is logged in - show main app screens
         <>
           <Stack.Screen
             name="Dashboard"
-            options={{ title: 'DebateSphere' }}
-          >
-            {(props) => <MainScreen {...props} component={Dashboard} />}
-          </Stack.Screen>
+            component={DashboardWithNavbar}
+            options={{ title: 'DebateSphere', headerShown:false }}
+          />
           <Stack.Screen
             name="Profile"
-            options={{ title: 'Profile' }}
-          >
-            {(props) => <MainScreen {...props} component={Profile} />}
-          </Stack.Screen>
+            component={ProfileWithoutNavbar}
+            options={{ headerShown: false }}
+          />
           <Stack.Screen
             name="Notification"
+            component={NotificationWithNavbar}
             options={{ title: 'Notifications' }}
-          >
-            {(props) => <MainScreen {...props} component={Notification} />}
-          </Stack.Screen>
+          />
           <Stack.Screen
             name="Contact"
+            component={ContactWithNavbar}
             options={{ title: 'Contact' }}
-          >
-            {(props) => <MainScreen {...props} component={Contact} />}
-          </Stack.Screen>
+          />
           <Stack.Screen
             name="DebatePage"
             component={DebatePageWrapper}
@@ -89,7 +106,6 @@ function AppNavigator() {
           />
         </>
       ) : (
-        // User is not logged in - show auth screens
         <>
           <Stack.Screen
             name="SignIn"
