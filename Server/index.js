@@ -7,9 +7,9 @@ const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
 const Room = require("./models/Room.js");
 const User = require("./models/Users.js"); // Import User model
+const UserStance = require('./models/UserStance.js');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-
 dotenv.config();
 
 // Connect to MongoDB
@@ -23,13 +23,15 @@ const messageSchema = new mongoose.Schema({
     text: String,
     image: String,
     sender: String,
-    userId: String,        // Add this field
-    userImage: String,     // Add this field
+    userId: String,
+    userImage: String,
     roomId: String,
     time: Date,
     isDeleted: Boolean,
-    aiDetected: Boolean,   // Add this field
-    aiConfidence: Number   // Add this field
+    aiDetected: Boolean,
+    aiConfidence: Number,
+    userStance: String, // Add this field to store stance in messages
+    stanceLabel: String // Add this field for display
 });
 
 const generateToken = (user) => {
@@ -77,6 +79,23 @@ io.on("connection", (socket) => {
   socket.on("join_room", async (roomId) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
+    try {
+          const stances = await UserStance.find({ roomId }).lean();
+          const stancesMap = {};
+          stances.forEach(stance => {
+            stancesMap[stance.userId] = {
+              userId: stance.userId,
+              username: stance.username,
+              stance: stance.stance,
+              stanceLabel: stance.stanceLabel,
+              userImage: stance.userImage
+            };
+          });
+
+          socket.emit('room_stances', stancesMap);
+        } catch (error) {
+          console.error('Error fetching room stances:', error);
+        }
 
     io.to(roomId).emit("receive_message", {
       text: `A user has joined the room`,
@@ -115,7 +134,74 @@ io.on("connection", (socket) => {
       });
     }
   });
+socket.on('user_stance_selected', async (data, callback) => {
+    try {
+      const { roomId, userId, username, stance, stanceLabel, userImage } = data;
 
+      console.log(`🎯 User ${username} selected stance: ${stanceLabel} in room ${roomId}`);
+
+      // Save or update stance
+      const userStance = await UserStance.findOneAndUpdate(
+        { roomId, userId },
+        {
+          roomId,
+          userId,
+          username,
+          stance,
+          stanceLabel,
+          userImage: userImage || '',
+          selectedAt: new Date()
+        },
+        { upsert: true, new: true }
+      );
+
+      // Broadcast to all users in the room
+      const stanceData = {
+        userId,
+        username,
+        stance,
+        stanceLabel,
+        userImage: userImage || '',
+        roomId,
+        selectedAt: userStance.selectedAt
+      };
+
+      socket.to(roomId).emit('user_stance_selected', stanceData);
+
+      if (callback) {
+        callback({ success: true });
+      }
+
+    } catch (error) {
+      console.error('Error saving user stance:', error);
+      if (callback) {
+        callback({ success: false, error: 'Failed to save stance' });
+      }
+    }
+  });
+
+  socket.on('check_user_stance', async (data, callback) => {
+      try {
+        const { roomId, userId } = data;
+
+        const stance = await UserStance.findOne({ roomId, userId });
+
+        if (callback) {
+          callback({
+            success: true,
+            stance: stance ? {
+              id: stance.stance,
+              label: stance.stanceLabel
+            } : null
+          });
+        }
+      } catch (error) {
+        console.error('Error checking user stance:', error);
+        if (callback) {
+          callback({ success: false, error: 'Failed to check stance' });
+        }
+      }
+    });
 socket.on("send_message", async (data, callback) => {
     console.log(`💬 Message from ${data.sender} in room ${data.roomId}: ${data.text || "Image"}`);
     console.log("Message data received:", {
@@ -149,13 +235,16 @@ socket.on("send_message", async (data, callback) => {
             time: new Date(data.time),
             isDeleted: false,
             aiDetected: data.aiDetected || false, // Add AI detection fields
-            aiConfidence: data.aiConfidence || 0
+            aiConfidence: data.aiConfidence || 0,
+            userStance: data.userStance?.id || data.userStance || "", // Include stance
+            stanceLabel: data.userStance?.label || ""
         };
 
         console.log("Saving message with user data:", {
             userId: messageData.userId,
             userImage: messageData.userImage,
-            sender: messageData.sender
+            sender: messageData.sender,
+            userStance: data.userStance,
         });
 
         const savedMessage = await new Message(messageData).save();
@@ -171,7 +260,9 @@ socket.on("send_message", async (data, callback) => {
             time: savedMessage.time.toISOString(),
             isDeleted: false,
             aiDetected: savedMessage.aiDetected,
-            aiConfidence: savedMessage.aiConfidence
+            aiConfidence: savedMessage.aiConfidence,
+            userStance: savedMessage.userStance, // Include in broadcast
+            stanceLabel: savedMessage.stanceLabel // Include in broadcast
         };
 
         console.log("Broadcasting message with user data:", {
@@ -559,6 +650,8 @@ app.delete('/api/rooms/:roomId', async (req, res) => {
     room.isActive = false;
     await room.save();
 
+    await UserStance.deleteMany({ roomId });
+
     io.emit('room_deleted', { roomId });
 
     res.json({ message: 'Room deleted successfully' });
@@ -568,6 +661,33 @@ app.delete('/api/rooms/:roomId', async (req, res) => {
   }
 });
 
+app.get('/api/rooms/:roomId/stance_stats', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const stats = await UserStance.aggregate([
+      { $match: { roomId } },
+      { $group: { _id: '$stance', count: { $sum: 1 } } }
+    ]);
+
+    const result = {
+      against: 0,
+      favor: 0,
+      neutral: 0,
+      total: 0
+    };
+
+    stats.forEach(stat => {
+      result[stat._id] = stat.count;
+      result.total += stat.count;
+    });
+
+    res.json({ success: true, stats: result });
+  } catch (error) {
+    console.error('Get stance stats error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch stance statistics' });
+  }
+});
 // Get messages for a room
 app.get("/api/rooms/:roomId/messages", async (req, res) => {
   try {
@@ -750,27 +870,56 @@ app.put("/api/update_desc", async (req, res) => {
 
 app.post('/api/save_user_stance', async (req, res) => {
   try {
-    const { roomId, userId, username, stance, stanceLabel } = req.body;
+    const { roomId, userId, username, stance, stanceLabel, userImage } = req.body;
 
-    // Save to database - using MongoDB as example
-    const result = await db.collection('user_stances').updateOne(
+    if (!roomId || !userId || !username || !stance || !stanceLabel) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Validate stance
+    const validStances = ['against', 'favor', 'neutral'];
+    if (!validStances.includes(stance)) {
+      return res.status(400).json({ error: 'Invalid stance' });
+    }
+
+    const userStance = await UserStance.findOneAndUpdate(
       { roomId, userId },
       {
-        $set: {
-          roomId,
-          userId,
-          username,
-          stance,
-          stanceLabel,
-          selectedAt: new Date()
-        }
+        roomId,
+        userId,
+        username,
+        stance,
+        stanceLabel,
+        userImage: userImage || '',
+        selectedAt: new Date()
       },
-      { upsert: true }
+      { upsert: true, new: true }
     );
 
-    res.json({ success: true });
+    // Notify all users in the room via socket
+    const stanceData = {
+      userId,
+      username,
+      stance,
+      stanceLabel,
+      userImage: userImage || '',
+      roomId,
+      selectedAt: userStance.selectedAt
+    };
+
+    io.to(roomId).emit('user_stance_selected', stanceData);
+
+    res.json({
+      success: true,
+      message: 'Stance saved successfully',
+      stance: userStance
+    });
+
   } catch (error) {
     console.error('Save stance error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'You have already selected a stance for this room' });
+    }
     res.status(500).json({ error: 'Failed to save stance' });
   }
 });
@@ -780,12 +929,14 @@ app.post('/api/get_user_stance', async (req, res) => {
   try {
     const { roomId, userId } = req.body;
 
-    const stance = await db.collection('user_stances').findOne({
-      roomId,
-      userId
-    });
+    if (!roomId || !userId) {
+      return res.status(400).json({ error: 'Room ID and User ID are required' });
+    }
+
+    const stance = await UserStance.findOne({ roomId, userId });
 
     res.json({
+      success: true,
       stance: stance ? {
         id: stance.stance,
         label: stance.stanceLabel
@@ -793,7 +944,7 @@ app.post('/api/get_user_stance', async (req, res) => {
     });
   } catch (error) {
     console.error('Get stance error:', error);
-    res.status(500).json({ error: 'Failed to fetch stance' });
+    res.status(500).json({ success: false, error: 'Failed to fetch stance' });
   }
 });
 
@@ -802,9 +953,11 @@ app.post('/api/get_room_stances', async (req, res) => {
   try {
     const { roomId } = req.body;
 
-    const stances = await db.collection('user_stances').find({
-      roomId
-    }).toArray();
+    if (!roomId) {
+      return res.status(400).json({ error: 'Room ID is required' });
+    }
+
+    const stances = await UserStance.find({ roomId }).lean();
 
     const stancesMap = {};
     stances.forEach(stance => {
@@ -812,14 +965,15 @@ app.post('/api/get_room_stances', async (req, res) => {
         userId: stance.userId,
         username: stance.username,
         stance: stance.stance,
-        stanceLabel: stance.stanceLabel
+        stanceLabel: stance.stanceLabel,
+        userImage: stance.userImage
       };
     });
 
-    res.json({ stances: stancesMap });
+    res.json({ success: true, stances: stancesMap });
   } catch (error) {
     console.error('Get room stances error:', error);
-    res.status(500).json({ error: 'Failed to fetch room stances' });
+    res.status(500).json({ success: false, error: 'Failed to fetch room stances' });
   }
 });
 
