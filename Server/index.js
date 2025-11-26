@@ -748,6 +748,82 @@ app.put("/api/update_desc", async (req, res) => {
     }
 });
 
+app.post('/api/save_user_stance', async (req, res) => {
+  try {
+    const { roomId, userId, username, stance, stanceLabel } = req.body;
+
+    // Save to database - using MongoDB as example
+    const result = await db.collection('user_stances').updateOne(
+      { roomId, userId },
+      {
+        $set: {
+          roomId,
+          userId,
+          username,
+          stance,
+          stanceLabel,
+          selectedAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Save stance error:', error);
+    res.status(500).json({ error: 'Failed to save stance' });
+  }
+});
+
+// API to get user stance
+app.post('/api/get_user_stance', async (req, res) => {
+  try {
+    const { roomId, userId } = req.body;
+
+    const stance = await db.collection('user_stances').findOne({
+      roomId,
+      userId
+    });
+
+    res.json({
+      stance: stance ? {
+        id: stance.stance,
+        label: stance.stanceLabel
+      } : null
+    });
+  } catch (error) {
+    console.error('Get stance error:', error);
+    res.status(500).json({ error: 'Failed to fetch stance' });
+  }
+});
+
+// API to get all stances for a room
+app.post('/api/get_room_stances', async (req, res) => {
+  try {
+    const { roomId } = req.body;
+
+    const stances = await db.collection('user_stances').find({
+      roomId
+    }).toArray();
+
+    const stancesMap = {};
+    stances.forEach(stance => {
+      stancesMap[stance.userId] = {
+        userId: stance.userId,
+        username: stance.username,
+        stance: stance.stance,
+        stanceLabel: stance.stanceLabel
+      };
+    });
+
+    res.json({ stances: stancesMap });
+  } catch (error) {
+    console.error('Get room stances error:', error);
+    res.status(500).json({ error: 'Failed to fetch room stances' });
+  }
+});
+
+
 app.post("/api/get_details", async(req, res)=>{
     const username = req.body.username;
 

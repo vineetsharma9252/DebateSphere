@@ -23,7 +23,7 @@ import AIContentWarning from '../warning/AIContentWarning';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com/';
 
-// Default images array (same as in your other components)
+// Default images array
 const defaultImages = [
   { id: 'nerd_male_1', source: require("../assets/Nerd_male_1.png"), name: "Alex" },
   { id: 'nerd_male_2', source: require("../assets/Nerd_male_2.png"), name: "James" },
@@ -31,6 +31,213 @@ const defaultImages = [
   { id: 'nerd_female_2', source: require("../assets/Nerd_female_2.png"), name: "Jasmine" },
   { id: 'nerd_male_3', source: require("../assets/Nerd_male_3.png"), name: "John" },
 ];
+
+// Stance Selection Modal Component
+const StanceSelectionModal = ({
+  visible,
+  onStanceSelected,
+  roomId,
+  userId,
+  username
+}) => {
+  const [selectedStance, setSelectedStance] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const stances = [
+    { id: 'against', label: 'Against', emoji: '👎', color: '#ef4444' },
+    { id: 'favor', label: 'In Favor', emoji: '👍', color: '#10b981' },
+    { id: 'neutral', label: 'Neutral', emoji: '🤝', color: '#6b7280' }
+  ];
+
+  const handleStanceSelect = async (stance) => {
+    if (loading) return;
+
+    setSelectedStance(stance);
+    setLoading(true);
+
+    try {
+      // Save stance to backend
+      const response = await fetch('https://debatesphere-11.onrender.com/api/save_user_stance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roomId,
+          userId,
+          username,
+          stance: stance.id,
+          stanceLabel: stance.label
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        onStanceSelected(stance);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save stance');
+        setSelectedStance(null);
+      }
+    } catch (error) {
+      console.error('Stance selection error:', error);
+      Alert.alert('Error', 'Network error while saving stance');
+      setSelectedStance(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={() => {}} // Prevent closing by back button
+    >
+      <View style={stanceStyles.modalOverlay}>
+        <View style={stanceStyles.modalContent}>
+          <View style={stanceStyles.header}>
+            <Text style={stanceStyles.title}>Choose Your Stance</Text>
+            <Text style={stanceStyles.subtitle}>
+              Select your position in this debate. This choice cannot be changed later.
+            </Text>
+          </View>
+
+          <View style={stanceStyles.stancesContainer}>
+            {stances.map((stance) => (
+              <TouchableOpacity
+                key={stance.id}
+                style={[
+                  stanceStyles.stanceButton,
+                  selectedStance?.id === stance.id && stanceStyles.stanceButtonSelected,
+                  { borderColor: stance.color }
+                ]}
+                onPress={() => handleStanceSelect(stance)}
+                disabled={loading}
+              >
+                <View style={[
+                  stanceStyles.stanceEmoji,
+                  { backgroundColor: `${stance.color}20` }
+                ]}>
+                  <Text style={stanceStyles.emojiText}>{stance.emoji}</Text>
+                </View>
+                <Text style={[
+                  stanceStyles.stanceLabel,
+                  selectedStance?.id === stance.id && stanceStyles.stanceLabelSelected
+                ]}>
+                  {stance.label}
+                </Text>
+                {loading && selectedStance?.id === stance.id && (
+                  <ActivityIndicator size="small" color={stance.color} style={stanceStyles.loading} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={stanceStyles.warning}>
+            <Text style={stanceStyles.warningText}>
+              ⚠️ Your stance cannot be changed once selected
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Styles for the stance modal
+const stanceStyles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  stancesContainer: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  stanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 2,
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
+  stanceButtonSelected: {
+    backgroundColor: '#f1f5f9',
+    transform: [{ scale: 1.02 }],
+  },
+  stanceEmoji: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  emojiText: {
+    fontSize: 20,
+  },
+  stanceLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1e293b',
+    flex: 1,
+  },
+  stanceLabelSelected: {
+    fontWeight: '700',
+  },
+  loading: {
+    marginLeft: 8,
+  },
+  warning: {
+    backgroundColor: '#fffbeb',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  warningText: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+});
 
 function ImageUploader({ onImageSelected, disabled }) {
   const fileInputRef = useRef(null);
@@ -124,7 +331,14 @@ export default function ChatRoom({ route }) {
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
-  const [userImages, setUserImages] = useState({}); // Store user images by user ID
+  const [userImages, setUserImages] = useState({});
+
+  // Stance-related state
+  const [showStanceModal, setShowStanceModal] = useState(false);
+  const [userStance, setUserStance] = useState(null);
+  const [hasCheckedStance, setHasCheckedStance] = useState(false);
+  const [roomStances, setRoomStances] = useState({});
+
   const { roomId, title, desc } = route.params;
   const { user } = useUser();
 
@@ -132,13 +346,21 @@ export default function ChatRoom({ route }) {
   const userId = user?.id || '';
   const userImage = user?.user_image || '';
 
-  console.log("User data in ChatRoom:", user);
-  console.log("User ID:", userId);
-  console.log("Username:", username);
-  console.log("User image:", userImage);
-
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Stance color and label mapping
+  const stanceColors = {
+    against: '#ef4444',
+    favor: '#10b981',
+    neutral: '#6b7280'
+  };
+
+  const stanceLabels = {
+    against: 'Against',
+    favor: 'In Favor',
+    neutral: 'Neutral'
+  };
 
   // Function to fetch user image by user ID
   const fetchUserImageById = async (targetUserId) => {
@@ -166,20 +388,16 @@ export default function ChatRoom({ route }) {
 
   // Function to get user image from cache or fetch it
   const getUserImage = async (messageUserId, messageUsername) => {
-    // If we already have the image in cache, return it
     if (userImages[messageUserId]) {
       return userImages[messageUserId];
     }
 
-    // If it's the current user, return current user's image
     if (messageUserId === userId) {
       return userImage;
     }
 
-    // Fetch user image from server
     const fetchedUserImage = await fetchUserImageById(messageUserId);
     if (fetchedUserImage) {
-      // Update cache
       setUserImages(prev => ({
         ...prev,
         [messageUserId]: fetchedUserImage
@@ -188,6 +406,71 @@ export default function ChatRoom({ route }) {
     }
 
     return '';
+  };
+
+  // Function to check if user has already selected a stance for this room
+  const checkUserStance = async () => {
+    if (!userId || !roomId) {
+      setHasCheckedStance(true);
+      return;
+    }
+
+    try {
+      const response = await fetch('https://debatesphere-11.onrender.com/api/get_user_stance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roomId,
+          userId
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        if (result.stance) {
+          setUserStance(result.stance);
+          setShowStanceModal(false);
+        } else {
+          setShowStanceModal(true);
+        }
+      } else {
+        console.error('Error checking stance:', result.error);
+        setShowStanceModal(true);
+      }
+    } catch (error) {
+      console.error('Stance check error:', error);
+      setShowStanceModal(true);
+    } finally {
+      setHasCheckedStance(true);
+    }
+  };
+
+  // Function to handle stance selection
+  const handleStanceSelected = (stance) => {
+    setUserStance(stance);
+    setShowStanceModal(false);
+
+    // Add user's own stance to room stances
+    setRoomStances(prev => ({
+      ...prev,
+      [userId]: {
+        userId,
+        username,
+        stance: stance.id,
+        stanceLabel: stance.label,
+        userImage: user?.user_image || ''
+      }
+    }));
+
+    // Show confirmation
+    Alert.alert(
+      'Stance Selected!',
+      `You are now debating: ${stance.label}`,
+      [{ text: 'Continue' }]
+    );
   };
 
   useEffect(() => {
@@ -203,6 +486,9 @@ export default function ChatRoom({ route }) {
       setIsConnected(true);
       setIsConnecting(false);
       socketRef.current.emit('join_room', roomId);
+
+      // Check user stance after connection
+      checkUserStance();
     });
 
     socketRef.current.on('disconnect', (reason) => {
@@ -224,15 +510,12 @@ export default function ChatRoom({ route }) {
     socketRef.current.on('receive_message', async (msg) => {
       console.log('Received message:', msg);
 
-      // Handle both single message and array of messages
       if (Array.isArray(msg)) {
-        // This is the initial batch of messages
         const messagesWithIds = await Promise.all(
           msg.map(async (message) => {
             const messageUserId = message.userId || message.senderId;
             let userImageToUse = message.userImage || '';
 
-            // If userImage is not provided in the message, try to fetch it
             if (!userImageToUse && messageUserId) {
               userImageToUse = await getUserImage(messageUserId, message.sender);
             }
@@ -249,11 +532,9 @@ export default function ChatRoom({ route }) {
 
         setMessages(messagesWithIds);
       } else {
-        // This is a single new message
         const messageUserId = msg.userId || msg.senderId;
         let userImageToUse = msg.userImage || '';
 
-        // If userImage is not provided in the message, try to fetch it
         if (!userImageToUse && messageUserId) {
           userImageToUse = await getUserImage(messageUserId, msg.sender);
         }
@@ -279,7 +560,6 @@ export default function ChatRoom({ route }) {
             const messageUserId = msg.userId || msg.senderId;
             let userImageToUse = msg.userImage || '';
 
-            // If userImage is not provided in the message, try to fetch it
             if (!userImageToUse && messageUserId) {
               userImageToUse = await getUserImage(messageUserId, msg.sender);
             }
@@ -324,7 +604,6 @@ export default function ChatRoom({ route }) {
           [userData.userId]: userData.userImage
         }));
       } else if (userData.userId) {
-        // Fetch user image if not provided
         const fetchedImage = await fetchUserImageById(userData.userId);
         if (fetchedImage) {
           setUserImages(prev => ({
@@ -333,6 +612,18 @@ export default function ChatRoom({ route }) {
           }));
         }
       }
+    });
+
+    // Handle stance-related events
+    socketRef.current.on('user_stance_selected', (data) => {
+      setRoomStances(prev => ({
+        ...prev,
+        [data.userId]: data
+      }));
+    });
+
+    socketRef.current.on('room_stances', (stances) => {
+      setRoomStances(stances);
     });
 
     socketRef.current.onAny((eventName, ...args) => {
@@ -347,7 +638,6 @@ export default function ChatRoom({ route }) {
   }, [roomId, userId]);
 
   useEffect(() => {
-    // Fade in animation
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
@@ -369,19 +659,23 @@ export default function ChatRoom({ route }) {
     return detection;
   };
 
-  // Enhanced sendMessage function with AI detection
   const sendMessage = async (imageData = null) => {
     if (!isConnected || isConnecting) return;
     if (!text.trim() && !imageData) return;
 
+    // Check if user has selected a stance
+    if (!userStance) {
+      Alert.alert('Stance Required', 'Please select your debate stance before sending messages.');
+      setShowStanceModal(true);
+      return;
+    }
+
     const messageText = text.trim();
 
-    // Check for AI content if text is present
     if (messageText && messageText.length > 20) {
       const aiDetection = await checkForAIContent(messageText);
 
       if (aiDetection && aiDetection.isAI) {
-        // Show warning modal
         setPendingMessage({
           text: messageText,
           image: imageData,
@@ -392,12 +686,10 @@ export default function ChatRoom({ route }) {
       }
     }
 
-    // If no AI detected or image only, send normally
     proceedWithMessage(messageText, imageData);
   };
 
   const proceedWithMessage = (messageText, imageData, isAIDetected = false) => {
-    // Ensure we have the user image
     const currentUserImage = user?.user_image || userImage || '';
 
     const messageData = {
@@ -405,26 +697,21 @@ export default function ChatRoom({ route }) {
       image: imageData,
       sender: username,
       userId: userId,
-      userImage: currentUserImage, // Make sure this is included
+      userImage: currentUserImage,
       roomId,
       time: new Date().toISOString(),
       aiDetected: isAIDetected,
-      aiConfidence: isAIDetected ? pendingMessage?.aiDetection?.confidence : 0
+      aiConfidence: isAIDetected ? pendingMessage?.aiDetection?.confidence : 0,
+      userStance: userStance // Include stance in message
     };
 
-    console.log('Sending message with user image:', {
-      username,
-      userId,
-      userImage: currentUserImage,
-      fullMessage: messageData
-    });
+    console.log('Sending message with stance:', userStance);
 
     socketRef.current.emit('send_message', messageData, (ack) => {
       console.log('Server ACK:', ack);
       if (ack && ack.error) {
         Alert.alert('Error', 'Failed to send message');
       } else if (isAIDetected) {
-        // Track AI usage
         handleAIDetection();
       }
     });
@@ -444,9 +731,7 @@ export default function ChatRoom({ route }) {
           [{ text: 'OK' }]
         );
 
-        // You could implement temporary restrictions here
         if (newCount >= 5) {
-          // Temporary mute or other restrictions
           Alert.alert(
             'Restriction Applied',
             'You have been temporarily restricted from sending messages due to repeated AI content.',
@@ -469,17 +754,14 @@ export default function ChatRoom({ route }) {
   const handleAICancel = () => {
     setPendingMessage(null);
     setAiWarningVisible(false);
-    // Optionally, put the text back in the input for editing
     if (pendingMessage?.text) {
       setText(pendingMessage.text);
     }
   };
 
-  // Reset consecutive detections after successful human message
   useEffect(() => {
     if (text && text.length > 0) {
       const lastDetection = consecutiveAIDetections;
-      // Reset if user sends a message that's not flagged as AI
       setTimeout(async () => {
         const detection = await checkForAIContent(text);
         if (!detection?.isAI && lastDetection === consecutiveAIDetections) {
@@ -507,7 +789,6 @@ export default function ChatRoom({ route }) {
 
     setSelectedMessage(message);
 
-    // Show action options
     if (message.sender === username) {
       Alert.alert(
         'Message Options',
@@ -553,7 +834,6 @@ export default function ChatRoom({ route }) {
 
     console.log('Deleting message:', messageToDelete.id);
 
-    // Emit delete event to server
     socketRef.current.emit('delete_message', {
       messageId: messageToDelete.id,
       roomId: roomId,
@@ -562,7 +842,6 @@ export default function ChatRoom({ route }) {
     }, (ack) => {
       console.log('Delete ACK:', ack);
       if (ack && ack.success) {
-        // Update local state immediately
         setMessages(prev => prev.map(msg =>
           msg.id === messageToDelete.id
             ? { ...msg, text: 'This message was deleted', image: null, isDeleted: true }
@@ -589,7 +868,6 @@ export default function ChatRoom({ route }) {
           text: 'Report',
           style: 'destructive',
           onPress: () => {
-            // Implement reporting logic here
             console.log('Reporting message:', message.id);
             Alert.alert('Report Submitted', 'Thank you for your report. We will review this message.');
           },
@@ -606,14 +884,7 @@ export default function ChatRoom({ route }) {
   const renderMessage = ({ item }) => {
     const isMyMessage = item.userId === userId;
     const messageUserImage = item.userImage || userImages[item.userId] || '';
-
-    console.log("Rendering message - User Image:", {
-      messageId: item.id,
-      sender: item.sender,
-      userId: item.userId,
-      userImage: messageUserImage,
-      hasUserImage: !!messageUserImage
-    });
+    const messageStance = item.userStance || roomStances[item.userId]?.stance;
 
     return (
       <Animated.View
@@ -648,8 +919,35 @@ export default function ChatRoom({ route }) {
           {/* User info for other users' messages */}
           {!item.isSystem && !isMyMessage && !item.isDeleted && (
             <View style={styles.msgUserInfo}>
-              <Text style={styles.msgUser}>
-                {item.sender}
+              <View style={styles.userInfoRow}>
+                <Text style={styles.msgUser}>
+                  {item.sender}
+                </Text>
+                {messageStance && (
+                  <View style={[
+                    styles.stanceBadge,
+                    { backgroundColor: `${stanceColors[messageStance]}20` }
+                  ]}>
+                    <Text style={[
+                      styles.stanceBadgeText,
+                      { color: stanceColors[messageStance] }
+                    ]}>
+                      {stanceLabels[messageStance] || messageStance}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* My message stance indicator */}
+          {isMyMessage && userStance && !item.isSystem && !item.isDeleted && (
+            <View style={styles.myStanceIndicator}>
+              <Text style={[
+                styles.myStanceText,
+                { color: stanceColors[userStance.id] || stanceColors[userStance] }
+              ]}>
+                Debating: {userStance.label || stanceLabels[userStance]}
               </Text>
             </View>
           )}
@@ -723,6 +1021,18 @@ export default function ChatRoom({ route }) {
     );
   };
 
+  // Show loading while checking stance
+  if (!hasCheckedStance) {
+    return (
+      <View style={styles.loadingOverlay}>
+        <View style={styles.loadingContent}>
+          <ActivityIndicator size="large" color="#667eea" />
+          <Text style={styles.connectingText}>Loading debate room...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -730,6 +1040,15 @@ export default function ChatRoom({ route }) {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <StatusBar barStyle="dark-content" backgroundColor="#667eea" />
+
+      {/* Stance Selection Modal */}
+      <StanceSelectionModal
+        visible={showStanceModal}
+        onStanceSelected={handleStanceSelected}
+        roomId={roomId}
+        userId={userId}
+        username={username}
+      />
 
       {/* AI Content Warning Modal */}
       <AIContentWarning
@@ -767,6 +1086,21 @@ export default function ChatRoom({ route }) {
             {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
           </Text>
         </View>
+
+        {/* User Stance Indicator */}
+        {userStance && (
+          <View style={[
+            styles.userStanceIndicator,
+            { backgroundColor: `${stanceColors[userStance.id] || stanceColors[userStance]}20` }
+          ]}>
+            <Text style={[
+              styles.userStanceText,
+              { color: stanceColors[userStance.id] || stanceColors[userStance] }
+            ]}>
+              Your Stance: {userStance.label || stanceLabels[userStance]}
+            </Text>
+          </View>
+        )}
 
         {/* AI Usage Indicator */}
         {consecutiveAIDetections > 0 && (
@@ -834,31 +1168,35 @@ export default function ChatRoom({ route }) {
         <View style={styles.inputRow}>
           <ImageUploader
             onImageSelected={handleImageSelected}
-            disabled={!isConnected || isConnecting}
+            disabled={!isConnected || isConnecting || !userStance}
           />
           <TextInput
             style={[
               styles.input,
-              (!isConnected || isConnecting) && styles.inputDisabled,
+              (!isConnected || isConnecting || !userStance) && styles.inputDisabled,
             ]}
-            placeholder={isConnecting ? 'Connecting...' : isConnected ? 'Type your argument...' : 'Disconnected'}
+            placeholder={
+              !userStance ? 'Select your stance to chat...' :
+              isConnecting ? 'Connecting...' :
+              isConnected ? 'Type your argument...' : 'Disconnected'
+            }
             placeholderTextColor="#999"
             value={text}
             onChangeText={setText}
             onSubmitEditing={() => sendMessage()}
             returnKeyType="send"
             onKeyPress={handleKeyPress}
-            editable={isConnected && !isConnecting}
+            editable={isConnected && !isConnecting && !!userStance}
             multiline
             maxLength={500}
           />
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              (!text.trim() || !isConnected || isConnecting) && styles.sendBtnDisabled,
+              (!text.trim() || !isConnected || isConnecting || !userStance) && styles.sendBtnDisabled,
             ]}
             onPress={() => sendMessage()}
-            disabled={!text.trim() || !isConnected || isConnecting}
+            disabled={!text.trim() || !isConnected || isConnecting || !userStance}
           >
             <Text style={styles.sendBtnText}>➤</Text>
           </TouchableOpacity>
@@ -913,8 +1251,6 @@ export default function ChatRoom({ route }) {
     </KeyboardAvoidingView>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   container: {
@@ -990,6 +1326,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.8)',
     fontWeight: '500',
+  },
+  userStanceIndicator: {
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  userStanceText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   connectionBanner: {
     backgroundColor: '#fef2f2',
@@ -1091,10 +1437,34 @@ const styles = StyleSheet.create({
   msgUserInfo: {
     marginBottom: 6,
   },
+  userInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
   msgUser: {
     fontSize: 12,
     fontWeight: '600',
     color: '#475569',
+  },
+  stanceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  stanceBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  myStanceIndicator: {
+    marginBottom: 8,
+  },
+  myStanceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontStyle: 'italic',
   },
   msgText: {
     fontSize: 16,
