@@ -349,17 +349,45 @@ export default function ChatRoom({ route }) {
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Stance color and label mapping
+  // Stance color and label mapping with text colors
   const stanceColors = {
-    against: '#ef4444',
-    favor: '#10b981',
-    neutral: '#6b7280'
+    against: {
+      background: '#ef4444',
+      text: '#ff6b35', // Orange text color for Against
+      light: '#fef2f2'
+    },
+    favor: {
+      background: '#10b981',
+      text: '#8b5cf6', // Purple text color for Favor
+      light: '#f0fdf4'
+    },
+    neutral: {
+      background: '#6b7280',
+      text: '#4b5563', // Gray text color for Neutral
+      light: '#f9fafb'
+    }
   };
 
   const stanceLabels = {
     against: 'Against',
     favor: 'In Favor',
     neutral: 'Neutral'
+  };
+
+  // Function to get text color based on stance
+  const getStanceTextColor = (stance) => {
+    if (!stance) return '#1e293b'; // Default text color
+
+    const stanceData = stanceColors[stance];
+    return stanceData ? stanceData.text : '#1e293b';
+  };
+
+  // Function to get background color based on stance
+  const getStanceBackgroundColor = (stance) => {
+    if (!stance) return '#f8fafc'; // Default background
+
+    const stanceData = stanceColors[stance];
+    return stanceData ? stanceData.light : '#f8fafc';
   };
 
   // Function to fetch user image by user ID
@@ -886,6 +914,10 @@ export default function ChatRoom({ route }) {
     const messageUserImage = item.userImage || userImages[item.userId] || '';
     const messageStance = item.userStance || roomStances[item.userId]?.stance;
 
+    // Get text color based on stance
+    const textColor = getStanceTextColor(messageStance);
+    const backgroundColor = getStanceBackgroundColor(messageStance);
+
     return (
       <Animated.View
         style={[
@@ -911,6 +943,11 @@ export default function ChatRoom({ route }) {
             item.isSystem && styles.systemMsg,
             item.isDeleted && styles.deletedMsg,
             item.aiDetected && styles.aiDetectedMsg,
+            !isMyMessage && !item.isSystem && !item.isDeleted && {
+              backgroundColor: backgroundColor,
+              borderLeftWidth: 4,
+              borderLeftColor: stanceColors[messageStance]?.background || '#e2e8f0'
+            },
           ]}
           onLongPress={() => handleMessageLongPress(item)}
           delayLongPress={500}
@@ -920,17 +957,20 @@ export default function ChatRoom({ route }) {
           {!item.isSystem && !isMyMessage && !item.isDeleted && (
             <View style={styles.msgUserInfo}>
               <View style={styles.userInfoRow}>
-                <Text style={styles.msgUser}>
+                <Text style={[
+                  styles.msgUser,
+                  { color: textColor }
+                ]}>
                   {item.sender}
                 </Text>
                 {messageStance && (
                   <View style={[
                     styles.stanceBadge,
-                    { backgroundColor: `${stanceColors[messageStance]}20` }
+                    { backgroundColor: `${stanceColors[messageStance]?.background}20` }
                   ]}>
                     <Text style={[
                       styles.stanceBadgeText,
-                      { color: stanceColors[messageStance] }
+                      { color: stanceColors[messageStance]?.background }
                     ]}>
                       {stanceLabels[messageStance] || messageStance}
                     </Text>
@@ -945,7 +985,7 @@ export default function ChatRoom({ route }) {
             <View style={styles.myStanceIndicator}>
               <Text style={[
                 styles.myStanceText,
-                { color: stanceColors[userStance.id] || stanceColors[userStance] }
+                { color: stanceColors[userStance.id]?.text || stanceColors[userStance]?.text }
               ]}>
                 Debating: {userStance.label || stanceLabels[userStance]}
               </Text>
@@ -973,6 +1013,7 @@ export default function ChatRoom({ route }) {
                     styles.msgText,
                     isMyMessage && styles.myMsgText,
                     item.isSystem && styles.systemMsgText,
+                    !isMyMessage && !item.isSystem && { color: textColor }
                   ]}
                 >
                   {item.text}
@@ -991,7 +1032,8 @@ export default function ChatRoom({ route }) {
           <Text style={[
             styles.msgTime,
             isMyMessage && styles.myMsgTime,
-            item.isDeleted && styles.deletedMsgTime
+            item.isDeleted && styles.deletedMsgTime,
+            !isMyMessage && !item.isSystem && !item.isDeleted && { color: `${textColor}80` }
           ]}>
             {new Date(item.time).toLocaleTimeString([], {
               hour: '2-digit',
@@ -1091,11 +1133,15 @@ export default function ChatRoom({ route }) {
         {userStance && (
           <View style={[
             styles.userStanceIndicator,
-            { backgroundColor: `${stanceColors[userStance.id] || stanceColors[userStance]}20` }
+            {
+              backgroundColor: `${stanceColors[userStance.id]?.background || stanceColors[userStance]?.background}20`,
+              borderLeftWidth: 4,
+              borderLeftColor: stanceColors[userStance.id]?.background || stanceColors[userStance]?.background
+            }
           ]}>
             <Text style={[
               styles.userStanceText,
-              { color: stanceColors[userStance.id] || stanceColors[userStance] }
+              { color: stanceColors[userStance.id]?.text || stanceColors[userStance]?.text }
             ]}>
               Your Stance: {userStance.label || stanceLabels[userStance]}
             </Text>
@@ -1332,6 +1378,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 8,
     alignSelf: 'flex-start',
+    borderLeftWidth: 4,
   },
   userStanceText: {
     fontSize: 12,
