@@ -332,12 +332,28 @@ export default function ChatRoom({ route }) {
   const [userAIScore, setUserAIScore] = useState(0);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
   const [userImages, setUserImages] = useState({});
-
+  // In your ChatRoom component's state
+  const [messageEvaluation, setMessageEvaluation] = useState(null);
   // Stance-related state
   const [showStanceModal, setShowStanceModal] = useState(false);
   const [userStance, setUserStance] = useState(null);
   const [hasCheckedStance, setHasCheckedStance] = useState(false);
   const [roomStances, setRoomStances] = useState({});
+  const [debateScores, setDebateScores] = useState({
+    favor: { total: 0, count: 0, average: 0, participants: 0 },
+    against: { total: 0, count: 0, average: 0, participants: 0 },
+    neutral: { total: 0, count: 0, average: 0, participants: 0 }
+  });
+  const [winner, setWinner] = useState(null);
+  const [showScoreboard, setShowScoreboard] = useState(false);
+  const [debateEnded, setDebateEnded] = useState(false);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [debateSettings, setDebateSettings] = useState({
+    maxDuration: 30, // minutes
+    maxArguments: 50,
+    winMarginThreshold: 10
+  });
+
 
   const { roomId, title, desc } = route.params;
   const { user } = useUser();
@@ -345,7 +361,7 @@ export default function ChatRoom({ route }) {
   const username = user?.username || 'Guest';
   const userId = user?.id || '';
   const userImage = user?.user_image || '';
-
+  console.log("User Data at ChatRoom is " + user);
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -389,7 +405,216 @@ export default function ChatRoom({ route }) {
     const stanceData = stanceColors[stance];
     return stanceData ? stanceData.light : '#f8fafc';
   };
+useEffect(() => {
+  if (!socketRef.current) return;
 
+  // Listen for score updates
+  socketRef.current.on('score_updated', (data) => {
+    if (data.roomId === roomId) {
+      setDebateScores(data.teamScores);
+    }
+  });
+
+  // Listen for debate end
+  socketRef.current.on('debate_ended', (data) => {
+    if (data.roomId === roomId) {
+      setWinner(data.winner);
+      setDebateEnded(true);
+      showWinnerModal(data);
+    }
+  });
+
+  // Listen for argument evaluations
+  socketRef.current.on('argument_evaluated', (data) => {
+    if (data.roomId === roomId && data.userId !== userId) {
+      // Show notification for other users' evaluations
+      ToastAndroid.show(
+        `${data.username}'s argument scored ${data.totalScore} points`,
+        ToastAndroid.SHORT
+      );
+    }
+  });
+
+  return () => {
+    if (socketRef.current) {
+      socketRef.current.off('score_updated');
+      socketRef.current.off('debate_ended');
+      socketRef.current.off('argument_evaluated');
+    }
+  };
+}, [roomId, userId]);
+
+// Update handleMessage function
+const handleMessage = async () => {
+  if (!text.trim() || !isConnected || !userStance) {
+    Alert.alert('Error', 'Cannot send empty message or without stance');
+    return;
+  }
+
+  // First, send the message to chat
+  const messageData = {
+    text: text.trim(),
+    sender: username,
+    userId: userId,
+    userImage: user?.user_image || '',
+    roomId: roomId,
+    time: new Date().toISOString(),
+    userStance: userStance.id || userStance,
+    stanceLabel: userStance.label || stanceLabels[userStance]
+  };
+
+  // Emit message
+  socketRef.current.emit('send_message', messageData, async (ack) => {
+    if (ack && ack.status === "ok") {
+      // Then evaluate the argument
+      try {
+        const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
+          argument: text.trim(),
+          team: userStance.id || userStance,
+          roomId: roomId,
+          userId: userId,
+          username: username,
+          messageId: ack.id // Link evaluation to message
+        });
+
+        if (evalResponse.data.success) {
+          const { evaluation, currentStandings, winner } = evalResponse.data;
+
+          // Update local scores
+          setDebateScores(currentStandings);
+
+          // Show evaluation to user
+          Alert.alert(
+            '📊 Argument Evaluated!',
+            `Your argument scored: ${evaluation.totalScore}/60\n\n` +
+            `Clarity: ${evaluation.clarity}/10\n` +
+            `Relevance: ${evaluation.relevance}/10\n` +
+            `Logic: ${evaluation.logic}/10\n` +
+            `Evidence: ${evaluation.evidence}/10\n` +
+            `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
+            `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
+            `Feedback: ${evaluation.feedback}`,
+            [{ text: 'OK' }]
+          );
+
+          // Update message with evaluation score
+          const updatedMessageData = {
+            ...messageData,
+            evaluationId: evaluation.evaluationId,
+            evaluationScore: evaluation.totalScore
+          };
+
+          // Re-emit with evaluation data
+          socketRef.current.emit('update_message_evaluation', updatedMessageData);
+
+          // Check if debate ended
+          if (winner && winner.winner !== 'undecided') {
+            setWinner(winner.winner);
+            setDebateEnded(true);
+          }
+        }
+      } catch (error) {
+        console.error('Evaluation error:', error);
+        // Continue without evaluation
+      }
+
+      setText('');
+    }
+  });
+};
+
+//   const handleMessage = async () => {
+//       if (!text.trim() || !userStance) return;
+//
+//       try {
+//         const response = await axios.post(SERVER_URL + "/evaluate", {
+//           argument: text,
+//           team: userStance.id // or userStance, depending on your data structure
+//         });
+//
+//         if (response.data.success) {
+//           // Store the detailed evaluation result
+//           setMessageEvaluation(response.data.evaluation);
+//           console.log("Evaluation received:", response.data.evaluation);
+//
+//           // Prepare and send the chat message via socket
+//           const messageData = {
+//             text: text,
+//             sender: username,
+//             userId: userId,
+//             roomId: roomId,
+//             // Optionally, you can attach a summary of the score to the message
+//             evaluationScore: response.data.evaluation.totalScore
+//           };
+//           socketRef.current.emit('send_message', messageData);
+//         }
+//         setText(''); // Clear input
+//       } catch (error) {
+//         console.error("Evaluation error:", error);
+//         Alert.alert("Error", "Could not evaluate argument. Sending without evaluation.");
+//         // Fallback: send the message without an evaluation
+//         const messageData = { /* ... */ };
+//         socketRef.current.emit('send_message', messageData);
+//         setText('');
+//       }
+//     };
+
+
+const showWinnerModal = (winnerData) => {
+  Alert.alert(
+    '🏆 Debate Concluded!',
+    `Winner: ${winnerData.winner.toUpperCase()}\n` +
+    `Margin of Victory: ${winnerData.margin || 'N/A'}%\n\n` +
+    `Final Scores:\n` +
+    `👍 In Favor: ${debateScores.favor.average?.toFixed(1) || '0.0'} avg\n` +
+    `👎 Against: ${debateScores.against.average?.toFixed(1) || '0.0'} avg\n` +
+    `🤝 Neutral: ${debateScores.neutral.average?.toFixed(1) || '0.0'} avg\n\n` +
+    `${winnerData.awards?.bestArgument ?
+      `Best Argument: ${winnerData.awards.bestArgument.username} (${winnerData.awards.bestArgument.score}pts)` : ''}`,
+    [
+      { text: 'View Details', onPress: () => setShowScoreboard(true) },
+      { text: 'Continue Chat' }
+    ]
+  );
+};
+
+const fetchScoreboard = async () => {
+  try {
+    const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
+    if (response.data.success) {
+      setLeaderboard(response.data.leaderboard || []);
+    }
+  } catch (error) {
+    console.error('Error fetching scoreboard:', error);
+  }
+};
+
+const endDebate = async () => {
+  Alert.alert(
+    'End Debate',
+    'Are you sure you want to end this debate? This will calculate the final winner.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'End Debate',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
+              userId: userId
+            });
+
+            if (response.data.success) {
+              Alert.alert('Success', 'Debate ended successfully');
+            }
+          } catch (error) {
+            Alert.alert('Error', error.response?.data?.error || 'Failed to end debate');
+          }
+        }
+      }
+    ]
+  );
+};
   // Function to fetch user image by user ID
   const fetchUserImageById = async (targetUserId) => {
     if (!targetUserId) return null;
@@ -1060,7 +1285,21 @@ export default function ChatRoom({ route }) {
           </View>
         )}
       </Animated.View>
+
     );
+    if (item.evaluationScore && !item.isDeleted) {
+        return (
+          <View style={styles.messageWithScore}>
+            <View style={[
+              styles.scoreBadge,
+              { backgroundColor: item.evaluationScore > 40 ? '#10b981' :
+                               item.evaluationScore > 30 ? '#f59e0b' : '#ef4444' }
+            ]}>
+              <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
+            </View>
+          </View>
+        );
+      }
   };
 
   // Show loading while checking stance
@@ -1074,6 +1313,189 @@ export default function ChatRoom({ route }) {
       </View>
     );
   }
+
+  const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId }) => {
+    const [activeTab, setActiveTab] = useState('scores');
+
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+      >
+        <View style={scoreboardStyles.modalOverlay}>
+          <View style={scoreboardStyles.modalContent}>
+            <View style={scoreboardStyles.header}>
+              <Text style={scoreboardStyles.title}>🏆 Debate Scoreboard</Text>
+              <TouchableOpacity onPress={onClose} style={scoreboardStyles.closeButton}>
+                <Text style={scoreboardStyles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={scoreboardStyles.tabContainer}>
+              <TouchableOpacity
+                style={[scoreboardStyles.tab, activeTab === 'scores' && scoreboardStyles.activeTab]}
+                onPress={() => setActiveTab('scores')}
+              >
+                <Text style={scoreboardStyles.tabText}>Team Scores</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[scoreboardStyles.tab, activeTab === 'leaderboard' && scoreboardStyles.activeTab]}
+                onPress={() => setActiveTab('leaderboard')}
+              >
+                <Text style={scoreboardStyles.tabText}>Leaderboard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[scoreboardStyles.tab, activeTab === 'settings' && scoreboardStyles.activeTab]}
+                onPress={() => setActiveTab('settings')}
+              >
+                <Text style={scoreboardStyles.tabText}>Settings</Text>
+              </TouchableOpacity>
+            </View>
+
+            {activeTab === 'scores' && (
+              <ScrollView style={scoreboardStyles.content}>
+                {['favor', 'against', 'neutral'].map((team) => (
+                  <View key={team} style={[
+                    scoreboardStyles.teamCard,
+                    winner === team && scoreboardStyles.winningTeamCard
+                  ]}>
+                    <View style={scoreboardStyles.teamHeader}>
+                      <Text style={scoreboardStyles.teamName}>
+                        {team === 'favor' ? '👍 In Favor' :
+                         team === 'against' ? '👎 Against' : '🤝 Neutral'}
+                        {winner === team && ' 🏆'}
+                      </Text>
+                      <Text style={scoreboardStyles.teamScore}>
+                        {scores[team]?.average?.toFixed(1) || '0.0'} avg
+                      </Text>
+                    </View>
+
+                    <View style={scoreboardStyles.statsGrid}>
+                      <View style={scoreboardStyles.statItem}>
+                        <Text style={scoreboardStyles.statLabel}>Total Points</Text>
+                        <Text style={scoreboardStyles.statValue}>{scores[team]?.total || 0}</Text>
+                      </View>
+                      <View style={scoreboardStyles.statItem}>
+                        <Text style={scoreboardStyles.statLabel}>Arguments</Text>
+                        <Text style={scoreboardStyles.statValue}>{scores[team]?.count || 0}</Text>
+                      </View>
+                      <View style={scoreboardStyles.statItem}>
+                        <Text style={scoreboardStyles.statLabel}>Participants</Text>
+                        <Text style={scoreboardStyles.statValue}>{scores[team]?.participants || 0}</Text>
+                      </View>
+                    </View>
+
+                    {scores[team]?.count > 0 && (
+                      <View style={scoreboardStyles.progressBar}>
+                        <View
+                          style={[
+                            scoreboardStyles.progressFill,
+                            {
+                              width: `${Math.min(100, (scores[team].average / 10) * 100)}%`,
+                              backgroundColor: team === 'favor' ? '#10b981' :
+                                             team === 'against' ? '#ef4444' : '#6b7280'
+                            }
+                          ]}
+                        />
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {activeTab === 'leaderboard' && (
+              <ScrollView style={scoreboardStyles.content}>
+                {leaderboard.length > 0 ? (
+                  leaderboard.map((player, index) => (
+                    <View key={index} style={scoreboardStyles.leaderboardRow}>
+                      <Text style={scoreboardStyles.rank}>#{index + 1}</Text>
+                      <View style={scoreboardStyles.playerInfo}>
+                        <Text style={scoreboardStyles.playerName}>{player.username}</Text>
+                        <View style={scoreboardStyles.playerDetails}>
+                          <Text style={scoreboardStyles.playerTeam}>
+                            {player.team === 'favor' ? '👍' :
+                             player.team === 'against' ? '👎' : '🤝'}
+                          </Text>
+                          <Text style={scoreboardStyles.playerStats}>
+                            {player.argumentCount} args • {player.averageScore.toFixed(1)} avg
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={scoreboardStyles.playerScore}>{player.totalScore}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={scoreboardStyles.emptyText}>No leaderboard data yet</Text>
+                )}
+              </ScrollView>
+            )}
+
+            {activeTab === 'settings' && (
+              <ScrollView style={scoreboardStyles.content}>
+                <Text style={scoreboardStyles.sectionTitle}>Debate Settings</Text>
+
+                <View style={scoreboardStyles.settingItem}>
+                  <Text style={scoreboardStyles.settingLabel}>Max Duration (minutes)</Text>
+                  <TextInput
+                    style={scoreboardStyles.settingInput}
+                    value={debateSettings.maxDuration.toString()}
+                    onChangeText={(text) => setDebateSettings({
+                      ...debateSettings,
+                      maxDuration: parseInt(text) || 30
+                    })}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={scoreboardStyles.settingItem}>
+                  <Text style={scoreboardStyles.settingLabel}>Max Arguments</Text>
+                  <TextInput
+                    style={scoreboardStyles.settingInput}
+                    value={debateSettings.maxArguments.toString()}
+                    onChangeText={(text) => setDebateSettings({
+                      ...debateSettings,
+                      maxArguments: parseInt(text) || 50
+                    })}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={scoreboardStyles.settingItem}>
+                  <Text style={scoreboardStyles.settingLabel}>Win Margin Threshold (%)</Text>
+                  <TextInput
+                    style={scoreboardStyles.settingInput}
+                    value={debateSettings.winMarginThreshold.toString()}
+                    onChangeText={(text) => setDebateSettings({
+                      ...debateSettings,
+                      winMarginThreshold: parseInt(text) || 10
+                    })}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={scoreboardStyles.saveButton}
+                  onPress={() => updateDebateSettings()}
+                >
+                  <Text style={scoreboardStyles.saveButtonText}>Save Settings</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={scoreboardStyles.endDebateButton}
+              onPress={endDebate}
+            >
+              <Text style={scoreboardStyles.endDebateButtonText}>End Debate Now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
@@ -1111,6 +1533,25 @@ export default function ChatRoom({ route }) {
               {desc || 'No description available'}
             </Text>
           </View>
+          <TouchableOpacity
+            style={styles.scoreboardButton}
+            onPress={() => {
+              fetchScoreboard();
+              setShowScoreboard(true);
+            }}
+          >
+            <Text style={styles.scoreboardButtonText}>📊</Text>
+          </TouchableOpacity>
+
+          // Add the ScoreboardModal to your main return
+          <ScoreboardModal
+            visible={showScoreboard}
+            onClose={() => setShowScoreboard(false)}
+            scores={debateScores}
+            leaderboard={leaderboard}
+            roomId={roomId}
+            userId={userId}
+          />
           <View style={styles.userBadge}>
             <Image
               source={getUserImageSource(userImage)}
@@ -1297,6 +1738,235 @@ export default function ChatRoom({ route }) {
     </KeyboardAvoidingView>
   );
 }
+
+const scoreboardStyles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 20,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    fontSize: 18,
+    color: '#64748b',
+    fontWeight: 'bold',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#667eea',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  activeTabText: {
+    color: '#667eea',
+  },
+  content: {
+    maxHeight: 400,
+  },
+  teamCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  winningTeamCard: {
+    borderColor: '#f59e0b',
+    borderWidth: 2,
+    backgroundColor: '#fffbeb',
+  },
+  teamHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  teamName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  teamScore: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#667eea',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  rank: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#64748b',
+    width: 40,
+  },
+  playerInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  playerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  playerDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playerTeam: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  playerStats: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  playerScore: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#667eea',
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontSize: 16,
+    padding: 40,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 20,
+  },
+  settingItem: {
+    marginBottom: 20,
+  },
+  settingLabel: {
+    fontSize: 14,
+    color: '#475569',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  settingInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 16,
+    color: '#1e293b',
+  },
+  saveButton: {
+    backgroundColor: '#667eea',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  endDebateButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  endDebateButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -1788,4 +2458,50 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  scoreboardButton: {
+      position: 'absolute',
+      bottom: 100,
+      right: 20,
+      backgroundColor: '#667eea',
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+      zIndex: 100,
+    },
+    scoreboardButtonText: {
+      fontSize: 24,
+      color: 'white',
+    },
+    messageWithScore: {
+      position: 'relative',
+    },
+    scoreBadge: {
+      position: 'absolute',
+      top: -8,
+      right: -8,
+      backgroundColor: '#10b981',
+      borderRadius: 12,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      minWidth: 50,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    scoreBadgeText: {
+      color: 'white',
+      fontSize: 11,
+      fontWeight: 'bold',
+    },
 });

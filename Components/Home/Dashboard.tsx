@@ -50,13 +50,30 @@ export default function Dashboard() {
   const [activeRooms, setActiveRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const scrollX = useRef(new Animated.Value(0)).current;
+  const [showWelcome, setShowWelcome] = useState(true);
 
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const welcomeAnim = useRef(new Animated.Value(1)).current;
+  console.log("User Data we are getting " + user);
   console.log("Username at dashboard is " + user.username);
   const username = user.username ;
 
   useEffect(() => {
     fetchAllRooms();
+
+    // Set timer to hide welcome section after 5 seconds
+    const welcomeTimer = setTimeout(() => {
+      // Start fade out animation
+      Animated.timing(welcomeAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowWelcome(false);
+      });
+    }, 5000); // 5 seconds
+
+    return () => clearTimeout(welcomeTimer);
   }, []);
 
   const fetchAllRooms = async () => {
@@ -239,21 +256,41 @@ export default function Dashboard() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Header Section */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.welcomeText}>Welcome back,</Text>
-            <Text style={styles.username}>{username || 'Debater'}! 👋</Text>
-          </View>
-          <View style={styles.userAvatar}>
-            <Text style={styles.userAvatarText}>
-              {username?.charAt(0)?.toUpperCase() || 'D'}
-            </Text>
-          </View>
-        </View>
+        {/* Header Section with Animation */}
+        {showWelcome && (
+          <Animated.View
+            style={[
+              styles.header,
+              {
+                opacity: welcomeAnim,
+                transform: [
+                  {
+                    translateY: welcomeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-20, 0],
+                    }),
+                  },
+                ],
+              }
+            ]}
+          >
+            <View>
+              <Text style={styles.welcomeText}>Welcome back,</Text>
+              <Text style={styles.username}>{username || 'Debater'}! 👋</Text>
+            </View>
+            <View style={styles.userAvatar}>
+              <Text style={styles.userAvatarText}>
+                {username?.charAt(0)?.toUpperCase() || 'D'}
+              </Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Stats Section - Updated with active rooms count */}
-        <View style={styles.statsContainer}>
+        <View style={[
+          styles.statsContainer,
+          !showWelcome && styles.statsContainerNoWelcome // Adjust spacing when welcome is hidden
+        ]}>
           <StatCard
             icon="💬"
             value={activeRooms.length.toString()}
@@ -421,6 +458,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     marginBottom: 30,
+  },
+  statsContainerNoWelcome: {
+    marginTop: 20, // Add some top margin when welcome is hidden
   },
   statCard: {
     flex: 1,

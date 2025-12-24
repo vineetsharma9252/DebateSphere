@@ -31,7 +31,10 @@ const messageSchema = new mongoose.Schema({
     aiDetected: Boolean,
     aiConfidence: Number,
     userStance: String, // Add this field to store stance in messages
-    stanceLabel: String // Add this field for display
+    stanceLabel: String, // Add this field for display
+    evaluationId: String, // Link to ArgumentEvaluation
+    evaluationScore: Number // Quick reference score
+
 });
 
 const generateToken = (user) => {
@@ -132,6 +135,107 @@ io.on("connection", (socket) => {
         time: new Date().toISOString(),
         isSystem: true,
       });
+    }
+  });
+
+socket.on('get_debate_scores', async (data, callback) => {
+    try {
+      const { roomId } = data;
+      const standings = await getCurrentStandings(roomId);
+
+      if (callback) {
+        callback({ success: true, standings });
+      }
+    } catch (error) {
+      console.error("Error getting debate scores:", error);
+      if (callback) {
+        callback({ success: false, error: error.message });
+      }
+    }
+});
+
+socket.on('end_debate', async (data, callback) => {
+    try {
+      const { roomId, userId } = data;
+
+      // Verify user has permission
+      const room = await Room.findOne({ roomId });
+      if (!room) {
+        if (callback) callback({ success: false, error: 'Room not found' });
+        return;
+      }
+
+      if (room.createdBy.toString() !== userId) {
+        // Check if user is a moderator (implement your own logic)
+        const user = await User.findById(userId);
+        if (!user || !user.isModerator) {
+          if (callback) callback({ success: false, error: 'Only room creator or moderators can end debate' });
+          return;
+        }
+      }
+
+      const winnerData = await determineWinner(roomId, true);
+
+      if (!winnerData) {
+        if (callback) callback({ success: false, error: 'Could not determine winner' });
+        return;
+      }
+
+      // Broadcast results to all users in room
+      io.to(roomId).emit('debate_ended', {
+        ...winnerData,
+        roomId,
+        endedBy: userId,
+        endedAt: new Date().toISOString()
+      });
+
+      if (callback) {
+        callback({ success: true, ...winnerData });
+      }
+    } catch (error) {
+      console.error("Error ending debate:", error);
+      if (callback) {
+        callback({ success: false, error: error.message });
+      }
+    }
+  });
+
+  socket.on('start_debate_timer', async (data, callback) => {
+    try {
+      const { roomId, duration } = data; // duration in minutes
+
+      const debateResult = await DebateResult.findOneAndUpdate(
+        { roomId },
+        {
+          $set: {
+            'settings.maxDuration': (duration || 30) * 60,
+            startTime: new Date(),
+            isActive: true
+          }
+        },
+        { upsert: true, new: true }
+      );
+
+      // Schedule automatic end
+      setTimeout(async () => {
+        const winner = await determineWinner(roomId);
+        if (winner) {
+          io.to(roomId).emit('debate_ended', {
+            ...winner,
+            reason: 'Time expired',
+            roomId
+          });
+        }
+      }, (duration || 30) * 60 * 1000);
+
+      if (callback) {
+        callback({ success: true, debateResult });
+      }
+    } catch (error) {
+      console.error("Error starting debate timer:", error);
+      if (callback) {
+        callback({ success: false, error: error.message });
+      }
     }
   });
 socket.on('user_stance_selected', async (data, callback) => {
@@ -456,6 +560,245 @@ socket.on("send_message", async (data, callback) => {
 
 // REST API routes
 // Backend endpoint to get user by ID
+async function updateTeamScore(roomId, team, score, userId) {
+  try {
+    let debateResult = await DebateResult.findOne({ roomId });
+
+    if (!debateResult) {
+      // Get room title for new debate result
+      const room = await Room.findOne({ roomId });
+      debateResult = new DebateResult({
+        roomId,
+        debateTitle: room?.title || `Debate ${roomId}`,
+        startTime: new Date()
+      });
+    }
+
+    // Update team statistics
+    const teamKey = team.toLowerCase();
+    if (debateResult.teamScores[teamKey]) {
+      // Update scores
+      debateResult.teamScores[teamKey].totalPoints += score;
+      debateResult.teamScores[teamKey].argumentCount += 1;
+      debateResult.teamScores[teamKey].averageScore =
+        debateResult.teamScores[teamKey].totalPoints /
+        debateResult.teamScores[teamKey].argumentCount;
+
+      // Add participant if not already in list
+      if (!debateResult.teamScores[teamKey].participants.includes(userId)) {
+        debateResult.teamScores[teamKey].participants.push(userId);
+      }
+    }
+
+    debateResult.totalRounds += 1;
+    debateResult.isActive = true;
+
+    await debateResult.save();
+
+    // Broadcast updated scores to room
+    const currentStandings = await getCurrentStandings(roomId);
+    io.to(roomId).emit('score_updated', {
+      roomId,
+      teamScores: currentStandings,
+      lastUpdate: new Date().toISOString()
+    });
+
+    return debateResult;
+  } catch (error) {
+    console.error("Error updating team score:", error);
+    throw error;
+  }
+}
+
+async function getCurrentStandings(roomId) {
+  const debateResult = await DebateResult.findOne({ roomId });
+  if (!debateResult) return null;
+
+  const standings = {};
+  ['favor', 'against', 'neutral'].forEach(team => {
+    standings[team] = {
+      total: debateResult.teamScores[team].totalPoints,
+      count: debateResult.teamScores[team].argumentCount,
+      average: debateResult.teamScores[team].averageScore,
+      participants: debateResult.teamScores[team].participants.length
+    };
+  });
+
+  return standings;
+}
+
+async function determineWinner(roomId, forceEnd = false) {
+  try {
+    const debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) return null;
+
+    // Check if debate should end based on settings
+    const debateDuration = (new Date() - debateResult.startTime) / 1000; // seconds
+    const shouldEndByTime = debateDuration >= debateResult.settings.maxDuration;
+    const shouldEndByArguments = debateResult.totalRounds >= debateResult.settings.maxArguments;
+
+    if (!forceEnd && !shouldEndByTime && !shouldEndByArguments) {
+      return null; // Debate continues
+    }
+
+    // Get all arguments for this room
+    const arguments = await ArgumentEvaluation.find({ roomId });
+
+    // Check minimum arguments per team
+    const teamsWithEnoughArgs = ['favor', 'against', 'neutral'].filter(team =>
+      debateResult.teamScores[team].argumentCount >= debateResult.settings.minArgumentsPerTeam
+    );
+
+    if (teamsWithEnoughArgs.length < 2) {
+      debateResult.winningTeam = 'undecided';
+      debateResult.endTime = new Date();
+      debateResult.isActive = false;
+      debateResult.calculatedAt = new Date();
+      await debateResult.save();
+
+      return {
+        winner: 'undecided',
+        reason: 'Insufficient arguments from at least 2 teams',
+        stats: await getCurrentStandings(roomId)
+      };
+    }
+
+    // Calculate weighted effectiveness score for each team
+    const teamEffectiveness = {};
+
+    for (const team of ['favor', 'against', 'neutral']) {
+      const teamArgs = arguments.filter(arg => arg.team === team);
+      if (teamArgs.length === 0) continue;
+
+      const totalScore = debateResult.teamScores[team].totalPoints;
+      const avgScore = debateResult.teamScores[team].averageScore;
+      const argCount = debateResult.teamScores[team].argumentCount;
+
+      // Calculate standard deviation for consistency
+      const scores = teamArgs.map(arg => arg.totalScore);
+      const mean = scores.reduce((a, b) => a + b) / scores.length;
+      const variance = scores.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / scores.length;
+      const consistency = Math.sqrt(variance);
+
+      // Calculate average rebuttal score
+      const avgRebuttal = teamArgs.reduce((sum, arg) => sum + arg.scores.rebuttal, 0) / argCount;
+
+      // Calculate participation rate
+      const uniqueParticipants = debateResult.teamScores[team].participants.length;
+      const totalParticipants = await UserStance.countDocuments({
+        roomId,
+        stance: team
+      });
+      const participationRate = totalParticipants > 0 ?
+        (uniqueParticipants / totalParticipants) * 100 : 0;
+
+      // Weighted effectiveness formula
+      teamEffectiveness[team] = {
+        rawScore: avgScore,
+        consistencyScore: Math.max(0, 10 - consistency), // Lower inconsistency = higher score
+        rebuttalStrength: avgRebuttal,
+        participationRate: participationRate / 10, // Scale to 0-10
+        quantityBonus: Math.log(argCount + 1) * 2, // Logarithmic bonus for more arguments
+
+        // Final weighted score
+        effectiveness: (avgScore * 0.30) +
+                      (Math.max(0, 10 - consistency) * 0.20) +
+                      (avgRebuttal * 0.25) +
+                      (Math.log(argCount + 1) * 1.5 * 0.15) +
+                      ((participationRate / 10) * 0.10)
+      };
+    }
+
+    // Find winner
+    const teams = Object.keys(teamEffectiveness);
+    if (teams.length === 0) {
+      debateResult.winningTeam = 'undecided';
+    } else if (teams.length === 1) {
+      debateResult.winningTeam = teams[0];
+    } else {
+      // Sort by effectiveness
+      teams.sort((a, b) => teamEffectiveness[b].effectiveness - teamEffectiveness[a].effectiveness);
+
+      const winner = teams[0];
+      const runnerUp = teams[1];
+      const margin = ((teamEffectiveness[winner].effectiveness - teamEffectiveness[runnerUp].effectiveness) /
+                     teamEffectiveness[runnerUp].effectiveness) * 100;
+
+      if (margin < debateResult.settings.winMarginThreshold) {
+        debateResult.winningTeam = 'tie';
+        debateResult.marginOfVictory = margin;
+      } else {
+        debateResult.winningTeam = winner;
+        debateResult.marginOfVictory = margin;
+      }
+    }
+
+    // Calculate awards
+    await calculateAwards(roomId, debateResult, arguments);
+
+    debateResult.endTime = new Date();
+    debateResult.isActive = false;
+    debateResult.calculatedAt = new Date();
+    await debateResult.save();
+
+    // Return winner data
+    return {
+      winner: debateResult.winningTeam,
+      margin: debateResult.marginOfVictory,
+      stats: await getCurrentStandings(roomId),
+      effectivenessScores: teamEffectiveness,
+      awards: debateResult.awards,
+      endedAt: debateResult.endTime
+    };
+
+  } catch (error) {
+    console.error("Error determining winner:", error);
+    throw error;
+  }
+}
+
+async function calculateAwards(roomId, debateResult, arguments) {
+  if (arguments.length === 0) return;
+
+  // Best Argument (highest total score)
+  const bestArgument = arguments.reduce((best, current) =>
+    current.totalScore > best.totalScore ? current : best
+  );
+
+  // Most Persuasive (highest persuasiveness score)
+  const mostPersuasive = arguments.reduce((best, current) =>
+    current.scores.persuasiveness > best.scores.persuasiveness ? current : best
+  );
+
+  // Most Active (most arguments)
+  const argumentCounts = {};
+  arguments.forEach(arg => {
+    argumentCounts[arg.userId] = (argumentCounts[arg.userId] || 0) + 1;
+  });
+  const mostActiveUserId = Object.keys(argumentCounts).reduce((a, b) =>
+    argumentCounts[a] > argumentCounts[b] ? a : b
+  );
+  const mostActiveArg = arguments.find(arg => arg.userId === mostActiveUserId);
+
+  debateResult.awards = {
+    bestArgument: bestArgument ? {
+      userId: bestArgument.userId,
+      username: bestArgument.username,
+      score: bestArgument.totalScore,
+      argumentExcerpt: bestArgument.argument.substring(0, 150) + '...'
+    } : null,
+    mostPersuasive: mostPersuasive ? {
+      userId: mostPersuasive.userId,
+      username: mostPersuasive.username,
+      score: mostPersuasive.scores.persuasiveness
+    } : null,
+    mostActive: mostActiveArg ? {
+      userId: mostActiveArg.userId,
+      username: mostActiveArg.username,
+      argumentCount: argumentCounts[mostActiveUserId]
+    } : null
+  };
+}
 
 app.post('/api/get_user_by_id', async (req, res) => {
   try {
@@ -1049,6 +1392,497 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
   }
 });
 
+// Helper function to update team scores
+async function updateTeamScore(roomId, team, score) {
+  // Find or create debate result
+  let debateResult = await DebateResult.findOne({ roomId });
+
+  if (!debateResult) {
+    debateResult = new DebateResult({ roomId });
+  }
+
+  // Update the specific team's score
+  const teamKey = team.toLowerCase();
+  if (debateResult.teamScores[teamKey]) {
+    debateResult.teamScores[teamKey].totalPoints += score;
+    debateResult.teamScores[teamKey].argumentCount += 1;
+    debateResult.teamScores[teamKey].averageScore =
+      debateResult.teamScores[teamKey].totalPoints /
+      debateResult.teamScores[teamKey].argumentCount;
+  }
+
+  debateResult.totalRounds += 1;
+  await debateResult.save();
+  return debateResult;
+}
+
+// Function to determine winner based on multiple criteria
+async function determineWinner(roomId) {
+  const debateResult = await DebateResult.findOne({ roomId });
+  if (!debateResult) return null;
+
+  const { teamScores, totalRounds } = debateResult;
+
+  // Criteria 1: Minimum arguments per team to declare winner
+  const MIN_ARGUMENTS_PER_TEAM = 3;
+  const teamsWithEnoughArgs = ['favor', 'against', 'neutral'].filter(team =>
+    teamScores[team].argumentCount >= MIN_ARGUMENTS_PER_TEAM
+  );
+
+  if (teamsWithEnoughArgs.length < 2) {
+    return { winner: 'undecided', reason: 'Insufficient arguments' };
+  }
+
+  // Calculate weighted scores (average score × number of arguments)
+  const teamStats = {};
+  ['favor', 'against', 'neutral'].forEach(team => {
+    if (teamScores[team].argumentCount > 0) {
+      teamStats[team] = {
+        averageScore: teamScores[team].averageScore,
+        argumentCount: teamScores[team].argumentCount,
+        weightedScore: teamScores[team].averageScore *
+                      Math.log(teamScores[team].argumentCount + 1) // Logarithm to prevent spam
+      };
+    }
+  });
+
+  // Find highest weighted score
+  const teams = Object.keys(teamStats);
+  if (teams.length === 0) return { winner: 'undecided' };
+
+  teams.sort((a, b) => teamStats[b].weightedScore - teamStats[a].weightedScore);
+
+  const winner = teams[0];
+  const runnerUp = teams[1];
+
+  // Check for tie (within 5% margin)
+  const margin = teamStats[winner].weightedScore - teamStats[runnerUp]?.weightedScore;
+  const marginPercentage = teamStats[runnerUp] ?
+    (margin / teamStats[runnerUp].weightedScore) * 100 : 100;
+
+  if (marginPercentage < 5 && marginPercentage > 0) {
+    return {
+      winner: 'tie',
+      teams: [winner, runnerUp],
+      margin: marginPercentage.toFixed(2)
+    };
+  }
+
+  debateResult.winningTeam = winner;
+  debateResult.marginOfVictory = marginPercentage;
+  debateResult.calculatedAt = new Date();
+  debateResult.isActive = false;
+  await debateResult.save();
+
+  return {
+    winner,
+    margin: marginPercentage.toFixed(2),
+    stats: teamStats
+  };
+}
+
+
+app.post("/evaluate", async (req, res) => {
+  const { argument, team, roomId, userId, username } = req.body;
+
+  // 1. Get evaluation from AI (using the corrected rubric from earlier)
+  const scoringRubric = `
+  You are a debate judge. Evaluate the following argument on a scale of 1-10 for each criterion.
+
+  **CRITERIA & SCORING GUIDE:**
+  1.  **Clarity (1-10):** Is the argument's main point easy to understand? Is the language precise?
+  2.  **Relevance (1-10):** Does the argument directly address the debate topic and the chosen stance (${team})?[citation:2]
+  3.  **Logical Structure (1-10):** Is the argument well-organized? Do the premises logically support the conclusion without contradiction?[citation:2][citation:5]
+  4.  **Use of Evidence (1-10):** Are claims backed by facts, examples, or data? Is the evidence credible and well-applied?[citation:1][citation:6]
+  5.  **Persuasiveness (1-10):** How effective is the argument at convincing an audience? Consider language, emotional appeal, and strength of reasoning.[citation:1]
+  6.  **Rebuttal Anticipation (1-10):** Does the argument proactively address obvious counter-arguments or weaknesses in its own position?[citation:2]
+
+  **USER'S STANCE:** ${team}
+
+  **ARGUMENT TO EVALUATE:**
+  """
+  ${argument}
+  """
+
+  **INSTRUCTIONS:**
+  - Score each criterion from 1 (poor) to 10 (excellent).
+  - Calculate the **totalScore** by summing all six scores.
+  - Provide brief, constructive **feedback** for the user.
+  - Return your response in valid JSON format only.
+
+  **OUTPUT FORMAT (JSON):**
+  {
+    "clarity": <number>,
+    "relevance": <number>,
+    "logic": <number>,
+    "evidence": <number>,
+    "persuasiveness": <number>,
+    "rebuttal": <number>,
+    "totalScore": <number>,
+    "feedback": "<string>"
+  }
+  `; // Your improved rubric
+
+  try {
+      // Call Groq API for evaluation
+      const response = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: "llama3-70b-8192",
+          messages: [{ role: "user", content: scoringRubric }],
+          temperature: 0.1,
+          max_tokens: 500
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 10000 // 10 second timeout
+        }
+      );
+
+      const resultText = response.data.choices[0].message.content;
+
+      // Parse JSON response
+      let evaluation;
+      try {
+        evaluation = JSON.parse(resultText);
+      } catch (parseError) {
+        console.error("Failed to parse AI response:", resultText);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to parse evaluation response"
+        });
+      }
+
+      // Save individual argument evaluation
+      const argumentEval = new ArgumentEvaluation({
+        roomId,
+        userId,
+        username,
+        team,
+        argument,
+        scores: {
+          clarity: evaluation.clarity,
+          relevance: evaluation.relevance,
+          logic: evaluation.logic,
+          evidence: evaluation.evidence,
+          persuasiveness: evaluation.persuasiveness,
+          rebuttal: evaluation.rebuttal
+        },
+        totalScore: evaluation.totalScore,
+        feedback: evaluation.feedback,
+        messageId,
+        evaluatedAt: new Date()
+      });
+
+      await argumentEval.save();
+
+      // Update team scores
+      await updateTeamScore(roomId, team, evaluation.totalScore, userId);
+
+      // Check if debate should automatically end
+      const debateResult = await DebateResult.findOne({ roomId });
+      let winnerData = null;
+      if (debateResult) {
+        winnerData = await determineWinner(roomId);
+      }
+
+      // Update the message with evaluation ID
+      if (messageId) {
+        await Message.findByIdAndUpdate(messageId, {
+          evaluationId: argumentEval._id,
+          evaluationScore: evaluation.totalScore
+        });
+      }
+
+      // Broadcast evaluation to room
+      io.to(roomId).emit('argument_evaluated', {
+        roomId,
+        userId,
+        username,
+        team,
+        totalScore: evaluation.totalScore,
+        evaluationId: argumentEval._id,
+        messageId
+      });
+
+      res.json({
+        success: true,
+        evaluation: {
+          ...evaluation,
+          evaluationId: argumentEval._id
+        },
+        teamUpdate: {
+          team,
+          scoreAdded: evaluation.totalScore,
+          newTotal: debateResult?.teamScores[team]?.totalPoints || 0
+        },
+        currentStandings: await getCurrentStandings(roomId),
+        winner: winnerData,
+        argumentId: argumentEval._id
+      });
+
+    } catch (err) {
+      console.error("Evaluation failed:", err);
+
+      // Fallback: Provide basic evaluation if AI fails
+      const fallbackEvaluation = {
+        clarity: 5,
+        relevance: 5,
+        logic: 5,
+        evidence: 5,
+        persuasiveness: 5,
+        rebuttal: 5,
+        totalScore: 30,
+        feedback: "Evaluation service temporarily unavailable. Argument saved without detailed scoring."
+      };
+
+      res.json({
+        success: true,
+        evaluation: fallbackEvaluation,
+        warning: "Using fallback evaluation due to service issue",
+        currentStandings: await getCurrentStandings(roomId)
+      });
+    }
+  });
+app.get('/api/debate/:roomId/results', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      return res.status(404).json({
+        success: false,
+        error: "Debate results not found"
+      });
+    }
+
+    // Get all arguments for detailed stats
+    const arguments = await ArgumentEvaluation.find({ roomId })
+      .sort({ totalScore: -1 })
+      .limit(20);
+
+    // Calculate team statistics
+    const teamStats = {};
+    ['favor', 'against', 'neutral'].forEach(team => {
+      const teamArgs = arguments.filter(arg => arg.team === team);
+      if (teamArgs.length > 0) {
+        teamStats[team] = {
+          argumentCount: teamArgs.length,
+          averageScore: teamArgs.reduce((sum, arg) => sum + arg.totalScore, 0) / teamArgs.length,
+          bestScore: Math.max(...teamArgs.map(arg => arg.totalScore)),
+          participants: [...new Set(teamArgs.map(arg => arg.username))]
+        };
+      }
+    });
+
+    // Calculate debate duration
+    const duration = debateResult.endTime ?
+      Math.round((debateResult.endTime - debateResult.startTime) / (1000 * 60)) :
+      Math.round((new Date() - debateResult.startTime) / (1000 * 60));
+
+    res.json({
+      success: true,
+      debate: {
+        roomId,
+        title: debateResult.debateTitle,
+        startTime: debateResult.startTime,
+        endTime: debateResult.endTime,
+        duration: `${duration} minutes`,
+        isActive: debateResult.isActive,
+        totalArguments: debateResult.totalRounds
+      },
+      winner: {
+        team: debateResult.winningTeam,
+        margin: debateResult.marginOfVictory,
+        calculatedAt: debateResult.calculatedAt
+      },
+      scores: debateResult.teamScores,
+      teamStats,
+      awards: debateResult.awards,
+      topArguments: arguments.slice(0, 5).map(arg => ({
+        username: arg.username,
+        team: arg.team,
+        score: arg.totalScore,
+        excerpt: arg.argument.substring(0, 100) + '...'
+      }))
+    });
+
+  } catch (error) {
+    console.error("Error getting debate results:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// GET REAL-TIME SCOREBOARD
+app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const standings = await getCurrentStandings(roomId);
+    if (!standings) {
+      return res.status(404).json({
+        success: false,
+        error: "No debate data found for this room"
+      });
+    }
+
+    // Get recent arguments
+    const recentArgs = await ArgumentEvaluation.find({ roomId })
+      .sort({ evaluatedAt: -1 })
+      .limit(10)
+      .select('username team totalScore evaluatedAt');
+
+    // Calculate leaderboard
+    const leaderboard = {};
+    const allArgs = await ArgumentEvaluation.find({ roomId });
+    allArgs.forEach(arg => {
+      if (!leaderboard[arg.userId]) {
+        leaderboard[arg.userId] = {
+          username: arg.username,
+          team: arg.team,
+          totalScore: 0,
+          argumentCount: 0,
+          averageScore: 0
+        };
+      }
+      leaderboard[arg.userId].totalScore += arg.totalScore;
+      leaderboard[arg.userId].argumentCount += 1;
+    });
+
+    // Calculate averages
+    Object.values(leaderboard).forEach(player => {
+      player.averageScore = player.totalScore / player.argumentCount;
+    });
+
+    // Convert to array and sort
+    const leaderboardArray = Object.values(leaderboard)
+      .sort((a, b) => b.averageScore - a.averageScore)
+      .slice(0, 10);
+
+    res.json({
+      success: true,
+      standings,
+      recentArguments: recentArgs,
+      leaderboard: leaderboardArray,
+      lastUpdated: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error("Error getting scoreboard:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ADMIN: FORCE END DEBATE
+app.post('/api/debate/:roomId/end', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { userId, reason } = req.body;
+
+    // Verify permissions
+    const room = await Room.findOne({ roomId });
+    const user = await User.findById(userId);
+
+    if (!room) {
+      return res.status(404).json({ success: false, error: 'Room not found' });
+    }
+
+    if (room.createdBy.toString() !== userId && (!user || !user.isModerator)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only room creator or moderators can end debate'
+      });
+    }
+
+    const winnerData = await determineWinner(roomId, true);
+
+    if (!winnerData) {
+      return res.status(400).json({
+        success: false,
+        error: 'Could not determine winner'
+      });
+    }
+
+    // Broadcast to all connected users
+    io.to(roomId).emit('debate_ended', {
+      ...winnerData,
+      roomId,
+      endedBy: userId,
+      reason: reason || 'Manually ended by moderator',
+      endedAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: 'Debate ended successfully',
+      ...winnerData
+    });
+
+  } catch (error) {
+    console.error("Error ending debate:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ADMIN: UPDATE DEBATE SETTINGS
+app.put('/api/debate/:roomId/settings', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { userId, settings } = req.body;
+
+    // Verify permissions
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ success: false, error: 'Room not found' });
+    }
+
+    if (room.createdBy.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only room creator can update settings'
+      });
+    }
+
+    const debateResult = await DebateResult.findOneAndUpdate(
+      { roomId },
+      { $set: { settings } },
+      { new: true, upsert: true }
+    );
+
+    // Broadcast settings update
+    io.to(roomId).emit('debate_settings_updated', {
+      roomId,
+      settings: debateResult.settings,
+      updatedBy: userId,
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: 'Debate settings updated',
+      settings: debateResult.settings
+    });
+
+  } catch (error) {
+    console.error("Error updating debate settings:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 app.post("/api/get_desc", async (req, res)=>{
         const username = req.body.username;
         try {
