@@ -1627,8 +1627,9 @@ app.post("/evaluate", async (req, res) => {
       });
 
     } catch (err) {
+      console.error("Groq API Error Details:", err.response?.data);
       console.error("Evaluation failed:", err);
-      console.error("Groq API Error Details:", error.response?.data);
+
       // Fallback: Provide basic evaluation if AI fails
       const fallbackEvaluation = {
         clarity: 5,
