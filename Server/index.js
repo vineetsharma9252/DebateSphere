@@ -1530,7 +1530,7 @@ app.post("/evaluate", async (req, res) => {
       const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
-          model: "llama3-8b-8192",
+          model: "mixtral-8x7b-32768",
           messages: [{ role: "user", content: scoringRubric }],
           temperature: 0.1,
           max_tokens: 150
