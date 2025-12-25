@@ -14,12 +14,14 @@ import {
   StatusBar,
   Modal,
   Animated,
+  ScrollView,
 } from 'react-native';
 import io from 'socket.io-client' ;
 import { useUser } from "../../Contexts/UserContext";
 import { useRoute } from '@react-navigation/native';
 import AIDetectionService from '../services/AIDetectionService';
 import AIContentWarning from '../warning/AIContentWarning';
+import axios from 'axios';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com/';
 
@@ -580,6 +582,7 @@ const showWinnerModal = (winnerData) => {
 
 const fetchScoreboard = async () => {
   try {
+      console.log("Room ID for fectching scorboard : " + roomId) ;
     const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
     if (response.data.success) {
       setLeaderboard(response.data.leaderboard || []);
@@ -1523,6 +1526,7 @@ const endDebate = async () => {
       />
 
       {/* Header */}
+      // In your ChatRoom.js render method, update the header section:
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.roomInfo}>
@@ -1533,25 +1537,6 @@ const endDebate = async () => {
               {desc || 'No description available'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.scoreboardButton}
-            onPress={() => {
-              fetchScoreboard();
-              setShowScoreboard(true);
-            }}
-          >
-            <Text style={styles.scoreboardButtonText}>📊</Text>
-          </TouchableOpacity>
-
-          // Add the ScoreboardModal to your main return
-          <ScoreboardModal
-            visible={showScoreboard}
-            onClose={() => setShowScoreboard(false)}
-            scores={debateScores}
-            leaderboard={leaderboard}
-            roomId={roomId}
-            userId={userId}
-          />
           <View style={styles.userBadge}>
             <Image
               source={getUserImageSource(userImage)}
@@ -1589,7 +1574,7 @@ const endDebate = async () => {
           </View>
         )}
 
-        {/* AI Usage Indicator */}
+        {/* AI Usage Indicator - REMOVE THE SCOREBOARD BUTTON FROM HERE */}
         {consecutiveAIDetections > 0 && (
           <View style={styles.aiUsageIndicator}>
             <Text style={styles.aiUsageText}>
@@ -1617,7 +1602,22 @@ const endDebate = async () => {
           </View>
         </View>
       )}
-
+    <View style={styles.rightSideButtons}>
+                              {/* Scorecard Button */}
+                              <TouchableOpacity
+                                style={styles.floatingScoreButton}
+                                onPress={() => {
+                                  fetchScoreboard();
+                                  setShowScoreboard(true);
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <View style={styles.scoreButtonContent}>
+                                  <Text style={styles.scoreButtonIcon}>📊</Text>
+                                  <Text style={styles.scoreButtonText}>Scores</Text>
+                                </View>
+                              </TouchableOpacity>
+                              </View>
       {/* Messages */}
       <View style={styles.messagesContainer}>
         <FlatList
@@ -2504,4 +2504,127 @@ const styles = StyleSheet.create({
       fontSize: 11,
       fontWeight: 'bold',
     },
+    rightSideButtons: {
+        position: 'absolute',
+        right: 16,
+        top: Platform.OS === 'ios' ? 100 : 80, // Adjust based on header height
+        zIndex: 1000,
+        alignItems: 'flex-end',
+      },
+
+      // Floating Score Button
+      floatingScoreButton: {
+        backgroundColor: '#667eea',
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        marginBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.3)',
+        minWidth: 80,
+      },
+
+      scoreButtonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+
+      scoreButtonIcon: {
+        fontSize: 20,
+        marginRight: 8,
+      },
+
+      scoreButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
+      },
+
+      // Timer Button
+      timerButton: {
+        backgroundColor: '#f59e0b',
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.3)',
+      },
+
+      timerIcon: {
+        fontSize: 24,
+      },
+
+      // Live Score Indicator (Optional)
+      liveScoreIndicator: {
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        borderRadius: 16,
+        padding: 12,
+        marginTop: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        minWidth: 120,
+      },
+
+      liveScoreTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 8,
+        textAlign: 'center',
+      },
+
+      liveScoreTeams: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+      },
+
+      liveScoreTeam: {
+        alignItems: 'center',
+        flex: 1,
+      },
+
+      liveScoreTeamIcon: {
+        fontSize: 16,
+        marginBottom: 4,
+      },
+
+      liveScoreTeamScore: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#1e293b',
+      },
+
+      // Updated messages container to accommodate floating buttons
+      messagesContainer: {
+        flex: 1,
+        paddingHorizontal: 16,
+        marginTop: 0, // Remove any top margin
+      },
+
+      // Make sure floating buttons don't overlap with messages
+      emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 100,
+        paddingHorizontal: 20, // Add horizontal padding
+      },
 });

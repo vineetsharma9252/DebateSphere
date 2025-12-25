@@ -102,7 +102,7 @@ function AppNavigator() {
           <Stack.Screen
             name="ChatRoom"
             component={ChatRoom}
-            options={{ title: 'Debate Room' }}
+            options={{ title: 'Debate Room' } ,{headerShown: false} }
           />
         </>
       ) : (
