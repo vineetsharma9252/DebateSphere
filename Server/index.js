@@ -1539,7 +1539,7 @@ app.post("/evaluate", async (req, res) => {
             Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
             "Content-Type": "application/json"
           },
-          timeout: 10000 // 10 second timeout
+          timeout: 60000 // 10 second timeout
         }
       );
 
