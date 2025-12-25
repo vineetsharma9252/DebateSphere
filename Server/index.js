@@ -10,6 +10,7 @@ const User = require("./models/Users.js"); // Import User model
 const DebateResult = require("./models/debateResult.js");
 const UserStance = require('./models/UserStance.js');
 const jwt = require('jsonwebtoken');
+const axios = require("axios");
 const { v4: uuidv4 } = require('uuid');
 dotenv.config();
 
