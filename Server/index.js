@@ -1533,7 +1533,7 @@ app.post("/evaluate", async (req, res) => {
           model: "llama3-8b-8192",
           messages: [{ role: "user", content: scoringRubric }],
           temperature: 0.1,
-          max_tokens: 500
+          max_tokens: 150
         },
         {
           headers: {
