@@ -1564,7 +1564,7 @@ Return ONLY valid JSON with this structure:
             // Create a structured fallback from the raw text
             evaluation = createFallbackFromText(resultText, argument);
         }
-        team = team.toLowerCase();
+//        team = team.toLowerCase();
         // Save to database
         console.log("team is " + team);
         const argumentEval = new ArgumentEvaluation({
