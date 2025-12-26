@@ -472,7 +472,7 @@ const handleMessage = async () => {
       try {
         const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
           argument: text.trim(),
-          team: userStance.id || userStance,
+          team: userStance.id.ToLowerCase() || userStance,
           roomId: roomId,
           userId: userId,
           username: username,
