@@ -623,7 +623,7 @@ const endDebate = async () => {
     if (!targetUserId) return null;
 
     try {
-      const response = await fetch(`${SERVER_URL}/api/get_user_by_id`, {
+      const response = await fetch(`${SERVER_URL}api/get_user_by_id`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
