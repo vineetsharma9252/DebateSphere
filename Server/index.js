@@ -559,11 +559,34 @@ socket.on("send_message", async (data, callback) => {
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id);
   });
+
+  // Add this socket event handler
+  socket.on('update_message_evaluation', async (data) => {
+    try {
+      // Update the message with evaluation data
+      await Message.findByIdAndUpdate(data.messageId, {
+        evaluationId: data.evaluationId,
+        evaluationScore: data.evaluationScore
+      });
+
+      // Broadcast the updated message
+      const updatedMessage = await Message.findById(data.messageId);
+      if (updatedMessage) {
+        io.to(data.roomId).emit('message_evaluated', {
+          messageId: data.messageId,
+          evaluationId: data.evaluationId,
+          evaluationScore: data.evaluationScore
+        });
+      }
+    } catch (error) {
+      console.error('Error updating message evaluation:', error);
+    }
+  });
 });
 
 // REST API routes
 // Backend endpoint to get user by ID
-async function updateTeamScore(roomId, team, score, userId) {
+async function updateTeamScore(roomId, team, score, userId) { // ✅ Add userId parameter
   try {
     let debateResult = await DebateResult.findOne({ roomId });
 
@@ -587,7 +610,7 @@ async function updateTeamScore(roomId, team, score, userId) {
         debateResult.teamScores[teamKey].totalPoints /
         debateResult.teamScores[teamKey].argumentCount;
 
-      // Add participant if not already in list
+      // ✅ Add participant if not already in list
       if (!debateResult.teamScores[teamKey].participants.includes(userId)) {
         debateResult.teamScores[teamKey].participants.push(userId);
       }
@@ -600,11 +623,13 @@ async function updateTeamScore(roomId, team, score, userId) {
 
     // Broadcast updated scores to room
     const currentStandings = await getCurrentStandings(roomId);
-    io.to(roomId).emit('score_updated', {
-      roomId,
-      teamScores: currentStandings,
-      lastUpdate: new Date().toISOString()
-    });
+    if (io) {
+      io.to(roomId).emit('score_updated', {
+        roomId,
+        teamScores: currentStandings,
+        lastUpdate: new Date().toISOString()
+      });
+    }
 
     return debateResult;
   } catch (error) {
@@ -1396,6 +1421,8 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
 });
 
 // Helper function to update team scores
+// DELETE THIS DUPLICATE SECTION (lines 1109-1152):
+// Helper function to update team scores
 async function updateTeamScore(roomId, team, score) {
   // Find or create debate result
   let debateResult = await DebateResult.findOne({ roomId });
@@ -1670,6 +1697,7 @@ Return ONLY valid JSON with this structure:
 });
 
 // Helper function to create fallback from malformed AI response
+// Helper function to create fallback from malformed AI response
 function createFallbackFromText(text, originalArgument) {
     // Try to extract numbers from the text
     const numbers = text.match(/\b\d{1,2}\b/g) || [];
@@ -1717,14 +1745,23 @@ function createIntelligentFallback(argument, team) {
                       argument.toLowerCase().includes('although') ||
                       argument.toLowerCase().includes('while');
 
+    // Calculate total score
+    const clarity = Math.min(10, baseScore + (hasStructure ? 1 : 0));
+    const relevance = baseScore;
+    const logic = Math.min(10, baseScore + (hasStructure ? 1 : 0));
+    const evidence = Math.min(10, baseScore + (hasEvidence ? 2 : 0));
+    const persuasiveness = baseScore;
+    const rebuttal = Math.min(10, baseScore + (hasCounter ? 2 : -1));
+    const totalScore = clarity + relevance + logic + evidence + persuasiveness + rebuttal;
+
     return {
-        clarity: Math.min(10, baseScore + (hasStructure ? 1 : 0)),
-        relevance: baseScore,
-        logic: Math.min(10, baseScore + (hasStructure ? 1 : 0)),
-        evidence: Math.min(10, baseScore + (hasEvidence ? 2 : 0)),
-        persuasiveness: baseScore,
-        rebuttal: Math.min(10, baseScore + (hasCounter ? 2 : -1)),
-        totalScore: 0, // Will calculate below
+        clarity,
+        relevance,
+        logic,
+        evidence,
+        persuasiveness,
+        rebuttal,
+        totalScore,
         feedback: wordCount < 50 ?
             "Argument is brief. Try adding more detail and supporting points." :
             hasEvidence ?
@@ -1734,6 +1771,8 @@ function createIntelligentFallback(argument, team) {
             "Try adding specific examples or data to strengthen your argument."
     };
 }
+
+
 app.get('/api/debate/:roomId/results', async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -1811,26 +1850,51 @@ app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const standings = await getCurrentStandings(roomId);
-    if (!standings) {
-      return res.status(404).json({
-        success: false,
-        error: "No debate data found for this room"
+    console.log(`📊 Fetching scoreboard for room: ${roomId}`);
+
+    // Get ALL arguments for this room from ArgumentEvaluation
+    const arguments = await ArgumentEvaluation.find({ roomId });
+
+    // If no arguments yet, return empty data
+    if (!arguments || arguments.length === 0) {
+      return res.json({
+        success: true,
+        standings: {
+          favor: { total: 0, count: 0, average: 0, participants: 0 },
+          against: { total: 0, count: 0, average: 0, participants: 0 },
+          neutral: { total: 0, count: 0, average: 0, participants: 0 }
+        },
+        leaderboard: [],
+        totalArguments: 0,
+        message: 'No arguments evaluated yet'
       });
     }
 
-    // Get recent arguments
-    const recentArgs = await ArgumentEvaluation.find({ roomId })
-      .sort({ evaluatedAt: -1 })
-      .limit(10)
-      .select('username team totalScore evaluatedAt');
+    // Calculate team scores from arguments
+    const teamStats = {
+      favor: { totalPoints: 0, argumentCount: 0, participants: new Set() },
+      against: { totalPoints: 0, argumentCount: 0, participants: new Set() },
+      neutral: { totalPoints: 0, argumentCount: 0, participants: new Set() }
+    };
 
     // Calculate leaderboard
-    const leaderboard = {};
-    const allArgs = await ArgumentEvaluation.find({ roomId });
-    allArgs.forEach(arg => {
-      if (!leaderboard[arg.userId]) {
-        leaderboard[arg.userId] = {
+    const userScores = {};
+
+    // Process each argument
+    arguments.forEach(arg => {
+      const team = arg.team;
+
+      // Update team stats
+      if (teamStats[team]) {
+        teamStats[team].totalPoints += arg.totalScore;
+        teamStats[team].argumentCount += 1;
+        teamStats[team].participants.add(arg.userId);
+      }
+
+      // Update user scores for leaderboard
+      if (!userScores[arg.userId]) {
+        userScores[arg.userId] = {
+          userId: arg.userId,
           username: arg.username,
           team: arg.team,
           totalScore: 0,
@@ -1838,33 +1902,60 @@ app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
           averageScore: 0
         };
       }
-      leaderboard[arg.userId].totalScore += arg.totalScore;
-      leaderboard[arg.userId].argumentCount += 1;
+      userScores[arg.userId].totalScore += arg.totalScore;
+      userScores[arg.userId].argumentCount += 1;
     });
 
-    // Calculate averages
-    Object.values(leaderboard).forEach(player => {
+    // Calculate averages for users
+    Object.values(userScores).forEach(player => {
       player.averageScore = player.totalScore / player.argumentCount;
     });
 
-    // Convert to array and sort
-    const leaderboardArray = Object.values(leaderboard)
+    // Format team standings
+    const standings = {};
+    Object.keys(teamStats).forEach(team => {
+      const stats = teamStats[team];
+      standings[team] = {
+        total: stats.totalPoints,
+        count: stats.argumentCount,
+        average: stats.argumentCount > 0 ? stats.totalPoints / stats.argumentCount : 0,
+        participants: stats.participants.size
+      };
+    });
+
+    // Get top 10 players sorted by average score
+    const leaderboard = Object.values(userScores)
       .sort((a, b) => b.averageScore - a.averageScore)
       .slice(0, 10);
+
+    // Get recent arguments for display
+    const recentArguments = await ArgumentEvaluation.find({ roomId })
+      .sort({ evaluatedAt: -1 })
+      .limit(5)
+      .select('username team totalScore evaluatedAt feedback')
+      .lean();
 
     res.json({
       success: true,
       standings,
-      recentArguments: recentArgs,
-      leaderboard: leaderboardArray,
+      leaderboard,
+      recentArguments: recentArguments.map(arg => ({
+        username: arg.username,
+        team: arg.team,
+        score: arg.totalScore,
+        time: arg.evaluatedAt,
+        feedback: arg.feedback?.substring(0, 50) + '...'
+      })),
+      totalArguments: arguments.length,
       lastUpdated: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error("Error getting scoreboard:", error);
+    console.error('❌ Scoreboard error:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Failed to fetch scoreboard data',
+      details: error.message
     });
   }
 });
@@ -1984,6 +2075,40 @@ app.post("/api/get_desc", async (req, res)=>{
         catch(error){
         console.error("Error getting description:", error);
         }
+});
+
+// Debug endpoint to check all data
+app.get('/api/debug/:roomId', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const arguments = await ArgumentEvaluation.find({ roomId });
+    const debateResult = await DebateResult.findOne({ roomId });
+    const messages = await Message.find({ roomId });
+
+    res.json({
+      success: true,
+      argumentCount: arguments.length,
+      debateResultExists: !!debateResult,
+      messageCount: messages.length,
+      arguments: arguments.slice(0, 3).map(arg => ({
+        id: arg._id,
+        team: arg.team,
+        score: arg.totalScore,
+        userId: arg.userId
+      })),
+      debateResult: debateResult ? {
+        totalRounds: debateResult.totalRounds,
+        teamScores: debateResult.teamScores
+      } : null
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // Health check route
