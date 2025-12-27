@@ -241,6 +241,44 @@ socket.on('end_debate', async (data, callback) => {
       }
     }
   });
+
+socket.on('get_debate_status', async (data, callback) => {
+  try {
+    const { roomId } = data;
+
+    const debateResult = await DebateResult.findOne({ roomId });
+    const room = await Room.findOne({ roomId });
+
+    if (callback) {
+      callback({
+        success: true,
+        isActive: debateResult?.isActive || false,
+        winner: debateResult?.winningTeam || room?.winner || null,
+        scores: await getCurrentStandings(roomId),
+        settings: debateResult?.settings || {
+          maxDuration: 1800,
+          maxArguments: 50,
+          winMarginThreshold: 10
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error getting debate status:', error);
+    if (callback) {
+      callback({ success: false, error: error.message });
+    }
+  }
+});
+
+socket.on('join_debate_scoreboard', (roomId) => {
+  socket.join(`scoreboard-${roomId}`);
+  console.log(`📊 User joined scoreboard for room ${roomId}`);
+});
+
+socket.on('leave_debate_scoreboard', (roomId) => {
+  socket.leave(`scoreboard-${roomId}`);
+});
+
 socket.on('user_stance_selected', async (data, callback) => {
     try {
       const { roomId, userId, username, stance, stanceLabel, userImage } = data;
@@ -1619,7 +1657,23 @@ Return ONLY valid JSON with this structure:
 
         // Update team scores
         await updateTeamScore(roomId, team, evaluation.totalScore, userId);
-
+            const existingStance = await UserStance.findOne({ roomId, userId });
+            if (!existingStance) {
+                await UserStance.findOneAndUpdate(
+                    { roomId, userId },
+                    {
+                        roomId,
+                        userId,
+                        username,
+                        stance: team.toLowerCase(),
+                        stanceLabel: team.toLowerCase() === 'favor' ? 'In Favor' :
+                                   team.toLowerCase() === 'against' ? 'Against' : 'Neutral',
+                        userImage: '',
+                        selectedAt: new Date()
+                    },
+                    { upsert: true, new: true }
+                );
+            }
         // Broadcast to room
         if (io) {
             io.to(roomId).emit('argument_evaluated', {
@@ -1640,7 +1694,25 @@ Return ONLY valid JSON with this structure:
                 evaluationScore: evaluation.totalScore
             });
         }
+        const currentStandings = await getCurrentStandings(roomId);
 
+                // Check if debate should end
+        const debateResult = await DebateResult.findOne({ roomId });
+        if (debateResult) {
+            const shouldEndByArguments = debateResult.totalRounds >= debateResult.settings.maxArguments;
+            const debateDuration = (new Date() - debateResult.startTime) / 1000;
+            const shouldEndByTime = debateDuration >= debateResult.settings.maxDuration;
+
+            if (shouldEndByArguments || shouldEndByTime) {
+                const winnerData = await determineWinner(roomId, true);
+                if (winnerData && winnerData.winner !== 'undecided') {
+                    io.to(roomId).emit('debate_ended', {
+                        roomId,
+                        ...winnerData
+                    });
+                }
+            }
+        }
         res.json({
             success: true,
             evaluation: evaluation,
@@ -1852,101 +1924,124 @@ app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
 
     console.log(`📊 Fetching scoreboard for room: ${roomId}`);
 
-    // Get ALL arguments for this room from ArgumentEvaluation
+    // Get debate result
+    const debateResult = await DebateResult.findOne({ roomId });
+
+    // Get all arguments for this room
     const arguments = await ArgumentEvaluation.find({ roomId });
 
-    // If no arguments yet, return empty data
-    if (!arguments || arguments.length === 0) {
-      return res.json({
-        success: true,
-        standings: {
-          favor: { total: 0, count: 0, average: 0, participants: 0 },
-          against: { total: 0, count: 0, average: 0, participants: 0 },
-          neutral: { total: 0, count: 0, average: 0, participants: 0 }
-        },
-        leaderboard: [],
-        totalArguments: 0,
-        message: 'No arguments evaluated yet'
-      });
-    }
+    // Calculate user statistics
+    const userStats = {};
 
-    // Calculate team scores from arguments
-    const teamStats = {
-      favor: { totalPoints: 0, argumentCount: 0, participants: new Set() },
-      against: { totalPoints: 0, argumentCount: 0, participants: new Set() },
-      neutral: { totalPoints: 0, argumentCount: 0, participants: new Set() }
-    };
-
-    // Calculate leaderboard
-    const userScores = {};
-
-    // Process each argument
     arguments.forEach(arg => {
+      const userId = arg.userId;
+      const username = arg.username;
       const team = arg.team;
 
-      // Update team stats
-      if (teamStats[team]) {
-        teamStats[team].totalPoints += arg.totalScore;
-        teamStats[team].argumentCount += 1;
-        teamStats[team].participants.add(arg.userId);
-      }
-
-      // Update user scores for leaderboard
-      if (!userScores[arg.userId]) {
-        userScores[arg.userId] = {
-          userId: arg.userId,
-          username: arg.username,
-          team: arg.team,
+      if (!userStats[userId]) {
+        userStats[userId] = {
+          userId,
+          username,
+          team,
           totalScore: 0,
           argumentCount: 0,
-          averageScore: 0
+          bestScore: 0,
+          recentScores: []
         };
       }
-      userScores[arg.userId].totalScore += arg.totalScore;
-      userScores[arg.userId].argumentCount += 1;
+
+      userStats[userId].totalScore += arg.totalScore;
+      userStats[userId].argumentCount += 1;
+      userStats[userId].bestScore = Math.max(userStats[userId].bestScore, arg.totalScore);
+      userStats[userId].recentScores.push({
+        score: arg.totalScore,
+        time: arg.evaluatedAt,
+        feedback: arg.feedback?.substring(0, 50)
+      });
+
+      // Keep only last 5 scores
+      if (userStats[userId].recentScores.length > 5) {
+        userStats[userId].recentScores.shift();
+      }
     });
 
-    // Calculate averages for users
-    Object.values(userScores).forEach(player => {
-      player.averageScore = player.totalScore / player.argumentCount;
-    });
+    // Calculate averages and format
+    const leaderboard = Object.values(userStats).map(player => {
+      const averageScore = player.argumentCount > 0
+        ? player.totalScore / player.argumentCount
+        : 0;
 
-    // Format team standings
-    const standings = {};
-    Object.keys(teamStats).forEach(team => {
-      const stats = teamStats[team];
-      standings[team] = {
-        total: stats.totalPoints,
-        count: stats.argumentCount,
-        average: stats.argumentCount > 0 ? stats.totalPoints / stats.argumentCount : 0,
-        participants: stats.participants.size
+      return {
+        userId: player.userId,
+        username: player.username,
+        team: player.team,
+        totalScore: player.totalScore,
+        argumentCount: player.argumentCount,
+        averageScore: parseFloat(averageScore.toFixed(2)),
+        bestScore: player.bestScore,
+        recentScores: player.recentScores
       };
-    });
+    }).sort((a, b) => b.averageScore - a.averageScore);
 
-    // Get top 10 players sorted by average score
-    const leaderboard = Object.values(userScores)
-      .sort((a, b) => b.averageScore - a.averageScore)
-      .slice(0, 10);
+    // Get team standings from debate result or calculate
+    let standings;
+    if (debateResult) {
+      standings = {
+        favor: {
+          total: debateResult.teamScores.favor.totalPoints,
+          count: debateResult.teamScores.favor.argumentCount,
+          average: debateResult.teamScores.favor.averageScore,
+          participants: debateResult.teamScores.favor.participants.length
+        },
+        against: {
+          total: debateResult.teamScores.against.totalPoints,
+          count: debateResult.teamScores.against.argumentCount,
+          average: debateResult.teamScores.against.averageScore,
+          participants: debateResult.teamScores.against.participants.length
+        },
+        neutral: {
+          total: debateResult.teamScores.neutral.totalPoints,
+          count: debateResult.teamScores.neutral.argumentCount,
+          average: debateResult.teamScores.neutral.averageScore,
+          participants: debateResult.teamScores.neutral.participants.length
+        }
+      };
+    } else {
+      // Calculate from arguments
+      const teamStats = {
+        favor: { total: 0, count: 0, participants: new Set() },
+        against: { total: 0, count: 0, participants: new Set() },
+        neutral: { total: 0, count: 0, participants: new Set() }
+      };
 
-    // Get recent arguments for display
-    const recentArguments = await ArgumentEvaluation.find({ roomId })
-      .sort({ evaluatedAt: -1 })
-      .limit(5)
-      .select('username team totalScore evaluatedAt feedback')
-      .lean();
+      arguments.forEach(arg => {
+        const team = arg.team;
+        if (teamStats[team]) {
+          teamStats[team].total += arg.totalScore;
+          teamStats[team].count += 1;
+          teamStats[team].participants.add(arg.userId);
+        }
+      });
+
+      standings = {};
+      Object.keys(teamStats).forEach(team => {
+        const stats = teamStats[team];
+        standings[team] = {
+          total: stats.total,
+          count: stats.count,
+          average: stats.count > 0 ? stats.total / stats.count : 0,
+          participants: stats.participants.size
+        };
+      });
+    }
 
     res.json({
       success: true,
       standings,
-      leaderboard,
-      recentArguments: recentArguments.map(arg => ({
-        username: arg.username,
-        team: arg.team,
-        score: arg.totalScore,
-        time: arg.evaluatedAt,
-        feedback: arg.feedback?.substring(0, 50) + '...'
-      })),
+      leaderboard: leaderboard.slice(0, 20), // Top 20
       totalArguments: arguments.length,
+      debateStatus: debateResult?.isActive ? 'active' : 'ended',
+      winner: debateResult?.winningTeam || 'undecided',
       lastUpdated: new Date().toISOString()
     });
 
@@ -1961,6 +2056,7 @@ app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
 });
 
 // ADMIN: FORCE END DEBATE
+// ADMIN: FORCE END DEBATE
 app.post('/api/debate/:roomId/end', async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -1968,19 +2064,39 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
 
     // Verify permissions
     const room = await Room.findOne({ roomId });
-    const user = await User.findById(userId);
-
     if (!room) {
       return res.status(404).json({ success: false, error: 'Room not found' });
     }
 
-    if (room.createdBy.toString() !== userId && (!user || !user.isModerator)) {
+    // Check if user is room creator or has moderator rights
+    const user = await User.findById(userId);
+    const isCreator = room.createdBy.toString() === userId;
+    const isModerator = user && user.isModerator;
+
+    if (!isCreator && !isModerator) {
       return res.status(403).json({
         success: false,
         error: 'Only room creator or moderators can end debate'
       });
     }
 
+    // Get or create debate result
+    let debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      debateResult = new DebateResult({
+        roomId,
+        debateTitle: room.title,
+        startTime: room.createdAt || new Date(),
+        settings: {
+          maxDuration: 1800,
+          maxArguments: 50,
+          minArgumentsPerTeam: 3,
+          winMarginThreshold: 10
+        }
+      });
+    }
+
+    // Calculate winner
     const winnerData = await determineWinner(roomId, true);
 
     if (!winnerData) {
@@ -1990,19 +2106,40 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
       });
     }
 
+    // Update debate result
+    debateResult.isActive = false;
+    debateResult.endTime = new Date();
+    debateResult.winningTeam = winnerData.winner;
+    debateResult.marginOfVictory = winnerData.margin;
+    debateResult.calculatedAt = new Date();
+
+    // Update awards
+    if (winnerData.awards) {
+      debateResult.awards = winnerData.awards;
+    }
+
+    await debateResult.save();
+
+    // Update room status
+    room.debateStatus = 'ended';
+    room.endedAt = new Date();
+    room.winner = winnerData.winner;
+    await room.save();
+
     // Broadcast to all connected users
     io.to(roomId).emit('debate_ended', {
       ...winnerData,
       roomId,
       endedBy: userId,
-      reason: reason || 'Manually ended by moderator',
+      reason: reason || 'Manually ended',
       endedAt: new Date().toISOString()
     });
 
     res.json({
       success: true,
       message: 'Debate ended successfully',
-      ...winnerData
+      ...winnerData,
+      endedAt: debateResult.endTime
     });
 
   } catch (error) {
@@ -2020,24 +2157,50 @@ app.put('/api/debate/:roomId/settings', async (req, res) => {
     const { roomId } = req.params;
     const { userId, settings } = req.body;
 
+    console.log(`⚙️ Updating settings for room ${roomId}:`, settings);
+
     // Verify permissions
     const room = await Room.findOne({ roomId });
     if (!room) {
       return res.status(404).json({ success: false, error: 'Room not found' });
     }
 
+    // Check if user is room creator
     if (room.createdBy.toString() !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only room creator can update settings'
+      const user = await User.findById(userId);
+      if (!user || !user.isModerator) {
+        return res.status(403).json({
+          success: false,
+          error: 'Only room creator or moderators can update settings'
+        });
+      }
+    }
+
+    // Get or create debate result
+    let debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      debateResult = new DebateResult({
+        roomId,
+        debateTitle: room.title,
+        startTime: new Date()
       });
     }
 
-    const debateResult = await DebateResult.findOneAndUpdate(
-      { roomId },
-      { $set: { settings } },
-      { new: true, upsert: true }
-    );
+    // Update settings
+    debateResult.settings = {
+      ...debateResult.settings,
+      ...settings,
+      maxDuration: settings.maxDuration * 60 || debateResult.settings.maxDuration // Convert minutes to seconds
+    };
+
+    await debateResult.save();
+
+    // Update room settings if needed
+    if (!room.settings) {
+      room.settings = {};
+    }
+    room.settings = { ...room.settings, ...settings };
+    await room.save();
 
     // Broadcast settings update
     io.to(roomId).emit('debate_settings_updated', {
@@ -2046,6 +2209,8 @@ app.put('/api/debate/:roomId/settings', async (req, res) => {
       updatedBy: userId,
       updatedAt: new Date().toISOString()
     });
+
+    console.log(`✅ Settings updated for room ${roomId}`);
 
     res.json({
       success: true,
@@ -2061,6 +2226,8 @@ app.put('/api/debate/:roomId/settings', async (req, res) => {
     });
   }
 });
+
+
 app.post("/api/get_desc", async (req, res)=>{
         const username = req.body.username;
         try {
