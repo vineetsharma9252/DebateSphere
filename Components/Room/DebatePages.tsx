@@ -328,7 +328,53 @@ export default function DebatePage() {
       })
     ]).start();
   };
+    const fetchDebateStats = async () => {
+      try {
+        // Fetch all rooms to calculate stats
+        const response = await fetch('https://debatesphere-11.onrender.com/api/all_rooms');
+        const allRooms = await response.json();
 
+        // Calculate statistics based on new server data
+        const totalDebates = allRooms.length;
+        const activeDebates = allRooms.filter(room =>
+          room.isActive === true && room.debateStatus !== 'ended'
+        ).length;
+
+        // Get debate results for winner info
+        const debateResults = await Promise.all(
+          allRooms.map(async (room) => {
+            try {
+              const resultResponse = await fetch(`https://debatesphere-11.onrender.com/api/debate/${room.roomId}/scoreboard`);
+              const resultData = await resultResponse.json();
+              return resultData;
+            } catch (error) {
+              return null;
+            }
+          })
+        );
+
+        // Calculate average participants
+        const totalParticipants = debateResults
+          .filter(result => result && result.standings)
+          .reduce((total, result) => {
+            const { standings } = result;
+            return total + (
+              (standings.favor?.participants || 0) +
+              (standings.against?.participants || 0) +
+              (standings.neutral?.participants || 0)
+            );
+          }, 0);
+
+        return {
+          totalDebates,
+          activeDebates,
+          totalParticipants: totalParticipants || activeDebates * 8 // Fallback calculation
+        };
+      } catch (error) {
+        console.error('Error fetching debate stats:', error);
+        return null;
+      }
+    };
   const fetchRooms = async () => {
     try {
       setLoading(true);
@@ -342,7 +388,27 @@ export default function DebatePage() {
       const data = await response.json();
 
       if (response.ok) {
-        setRooms(data);
+          const enhancedRooms = await Promise.all(
+                  data.map(async (room) => {
+                    try {
+                      // Fetch debate results for each room
+                      const resultResponse = await fetch(`https://debatesphere-11.onrender.com/api/debate/${room.roomId}/scoreboard`);
+                      if (resultResponse.ok) {
+                        const resultData = await resultResponse.json();
+                        return {
+                          ...room,
+                          debateStatus: resultData.debateStatus || 'active',
+                          winner: resultData.winner || null,
+                          standings: resultData.standings || null
+                        };
+                      }
+                      return room;
+                    } catch (error) {
+                      return room;
+                    }
+                  })
+                );
+        setRooms(enhancedRooms);
       } else {
         Alert.alert('Error', data.error || 'Failed to fetch rooms');
       }
@@ -431,7 +497,25 @@ export default function DebatePage() {
     </Modal>
   );
 
-  const renderRoom = ({ item, index }) => (
+  const renderRoom = ({ item, index }) => {
+
+      const getRoomStatus = (room) => {
+          if (!room.isActive) return { status: 'Closed', color: COLORS.danger };
+          if (room.debateStatus === 'ended') return { status: 'Ended', color: COLORS.textLight };
+          if (room.debateStatus === 'active') return { status: 'Live', color: COLORS.accent };
+          return { status: 'Active', color: COLORS.success };
+        };
+
+        const roomStatus = getRoomStatus(item);
+
+        // Calculate participant count from standings
+        const participantCount = item.standings ?
+          (item.standings.favor?.participants || 0) +
+          (item.standings.against?.participants || 0) +
+          (item.standings.neutral?.participants || 0) : 0;
+
+
+      return (
     <Animated.View
       style={[
         styles.roomItem,
@@ -456,16 +540,29 @@ export default function DebatePage() {
             </Text>
             <Text style={styles.roomTopic}>#{item.topic || 'General'}</Text>
           </View>
-          <View style={styles.activeIndicator}>
-            <View style={styles.activeDot} />
-            <Text style={styles.activeText}>Live</Text>
+          <View style={[styles.activeIndicator , {backgroundColor : `${roomStatus.color}20`}]}>
+            <View style={[styles.activeDot, { backgroundColor: roomStatus.color }]} />
+            <Text style={[styles.activeText, { color: roomStatus.color === COLORS.accent ? '#166534' : roomStatus.color }]}> {roomStatus.status}</Text>
           </View>
         </View>
 
         <Text style={styles.roomDesc} numberOfLines={2}>
           {item.desc || 'Join this engaging debate conversation'}
         </Text>
-
+        <View style={styles.roomMetaInfo}>
+                  <View style={styles.metaItem}>
+                    <Text style={styles.metaLabel}>Participants:</Text>
+                    <Text style={styles.metaValue}>👥 {participantCount || '0'}</Text>
+                  </View>
+                  {item.winner && (
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Winner:</Text>
+                      <Text style={[styles.metaValue, { color: COLORS.success }]}>
+                        🏆 {item.winner.charAt(0).toUpperCase() + item.winner.slice(1)}
+                      </Text>
+                    </View>
+                  )}
+              </View>
         <View style={styles.roomFooter}>
           <View style={styles.creatorInfo}>
             <Text style={styles.creatorText}>
@@ -479,12 +576,17 @@ export default function DebatePage() {
           </View>
         </View>
 
-        <View style={styles.joinButton}>
-          <Text style={styles.joinButtonText}>Join Debate →</Text>
-        </View>
+        <View style={[
+                  styles.joinButton,
+                  (!item.isActive || item.debateStatus === 'ended') && styles.joinButtonDisabled
+                ]}>
+                  <Text style={styles.joinButtonText}>
+                    {(!item.isActive || item.debateStatus === 'ended') ? 'Room Closed' : 'Join Debate →'}
+                  </Text>
+         </View>
       </TouchableOpacity>
     </Animated.View>
-  );
+  )};
 
   const renderTopic = ({ item, index }) => (
     <TouchableOpacity
@@ -1192,4 +1294,28 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: COLORS.accent,
   },
+   roomMetaInfo: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
+    metaItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    metaLabel: {
+      fontSize: 12,
+      color: COLORS.textLight,
+      marginRight: 4,
+    },
+    metaValue: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: COLORS.primary,
+    },
+    joinButtonDisabled: {
+      backgroundColor: COLORS.textLight,
+      opacity: 0.7,
+    },
 });

@@ -1461,28 +1461,28 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
 // Helper function to update team scores
 // DELETE THIS DUPLICATE SECTION (lines 1109-1152):
 // Helper function to update team scores
-async function updateTeamScore(roomId, team, score) {
-  // Find or create debate result
-  let debateResult = await DebateResult.findOne({ roomId });
-
-  if (!debateResult) {
-    debateResult = new DebateResult({ roomId });
-  }
-
-  // Update the specific team's score
-  const teamKey = team.toLowerCase();
-  if (debateResult.teamScores[teamKey]) {
-    debateResult.teamScores[teamKey].totalPoints += score;
-    debateResult.teamScores[teamKey].argumentCount += 1;
-    debateResult.teamScores[teamKey].averageScore =
-      debateResult.teamScores[teamKey].totalPoints /
-      debateResult.teamScores[teamKey].argumentCount;
-  }
-
-  debateResult.totalRounds += 1;
-  await debateResult.save();
-  return debateResult;
-}
+//async function updateTeamScore(roomId, team, score) {
+//  // Find or create debate result
+//  let debateResult = await DebateResult.findOne({ roomId });
+//
+//  if (!debateResult) {
+//    debateResult = new DebateResult({ roomId });
+//  }
+//
+//  // Update the specific team's score
+//  const teamKey = team.toLowerCase();
+//  if (debateResult.teamScores[teamKey]) {
+//    debateResult.teamScores[teamKey].totalPoints += score;
+//    debateResult.teamScores[teamKey].argumentCount += 1;
+//    debateResult.teamScores[teamKey].averageScore =
+//      debateResult.teamScores[teamKey].totalPoints /
+//      debateResult.teamScores[teamKey].argumentCount;
+//  }
+//
+//  debateResult.totalRounds += 1;
+//  await debateResult.save();
+//  return debateResult;
+//}
 
 // Function to determine winner based on multiple criteria
 async function determineWinner(roomId) {

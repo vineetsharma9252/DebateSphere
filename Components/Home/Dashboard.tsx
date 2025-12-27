@@ -51,6 +51,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [debateStats, setDebateStats] = useState({
+      totalDebates: 0,
+      activeDebates: 0,
+      totalParticipants: 0
+    });
 
   const scrollX = useRef(new Animated.Value(0)).current;
   const welcomeAnim = useRef(new Animated.Value(1)).current;
@@ -60,7 +65,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchAllRooms();
-
+    fetchDebateStats();
     // Set timer to hide welcome section after 5 seconds
     const welcomeTimer = setTimeout(() => {
       // Start fade out animation
@@ -84,7 +89,7 @@ export default function Dashboard() {
       setRooms(allRooms);
 
       // Filter only active rooms
-      const activeRoomsList = allRooms.filter(room => room.isActive === true);
+      const activeRoomsList = allRooms.filter(room => room.isActive === true && room.debateStatus !== 'ended');
       setActiveRooms(activeRoomsList);
 
       console.log(`Total rooms: ${allRooms.length}, Active rooms: ${activeRoomsList.length}`);
@@ -94,7 +99,31 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+     const fetchDebateStats = async () => {
+        try {
+          // Fetch all rooms to calculate stats
+          const response = await axios.get(BACKEND_URL);
+          const allRooms = response.data;
 
+          // Calculate statistics based on new server data
+          const totalDebates = allRooms.length;
+          const activeDebates = allRooms.filter(room =>
+            room.isActive === true && room.debateStatus !== 'ended'
+          ).length;
+
+          // For participant count, you might need a different endpoint
+          // This is a placeholder - update with actual endpoint when available
+          const totalParticipants = activeDebates * 12; // Placeholder calculation
+
+          setDebateStats({
+            totalDebates,
+            activeDebates,
+            totalParticipants
+          });
+        } catch (error) {
+          console.error('Error fetching debate stats:', error);
+        }
+      };
   const handleTopicPress = (topic) => {
     navigation.navigate('DebatePage', {
       topic: topic.name,
@@ -190,7 +219,19 @@ export default function Dashboard() {
     );
   };
 
-  const renderRoomItem = ({ item, index }) => (
+  const renderRoomItem = ({ item, index }) => {
+
+    const getRoomStatus = (room) => {
+      if (!room.isActive) return { status: 'Closed', color: COLORS.danger };
+      if (room.debateStatus === 'ended') return { status: 'Ended', color: COLORS.textLight };
+      if (room.debateStatus === 'active') return { status: 'Live', color: COLORS.accent };
+      return { status: 'Active', color: COLORS.success };
+    };
+
+    const roomStatus = getRoomStatus(item);
+
+
+      return (
     <TouchableOpacity
       style={styles.roomItem}
       onPress={() => navigation.navigate('ChatRoom', {
@@ -235,7 +276,7 @@ export default function Dashboard() {
         </View>
       </View>
     </TouchableOpacity>
-  );
+  )};
 
   const StatCard = ({ icon, value, label, color = COLORS.primary }) => (
     <View style={styles.statCard}>
@@ -292,23 +333,23 @@ export default function Dashboard() {
           !showWelcome && styles.statsContainerNoWelcome // Adjust spacing when welcome is hidden
         ]}>
           <StatCard
-            icon="💬"
-            value={activeRooms.length.toString()}
-            label="Active Rooms"
-            color={COLORS.primary}
-          />
-          <StatCard
-            icon="👥"
-            value="156"
-            label="Debaters Online"
-            color={COLORS.success}
-          />
-          <StatCard
-            icon="🔥"
-            value={popularTopics.length.toString()}
-            label="Hot Topics"
-            color={COLORS.warning}
-          />
+                      icon="💬"
+                      value={debateStats.activeDebates.toString()}
+                      label="Active Debates"
+                      color={COLORS.primary}
+                    />
+                    <StatCard
+                      icon="👥"
+                      value={debateStats.totalParticipants.toString()}
+                      label="Participants"
+                      color={COLORS.success}
+                    />
+                    <StatCard
+                      icon="🏆"
+                      value={debateStats.totalDebates.toString()}
+                      label="Total Debates"
+                      color={COLORS.warning}
+                    />
         </View>
 
         {/* Popular Topics Slider */}

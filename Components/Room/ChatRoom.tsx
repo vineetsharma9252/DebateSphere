@@ -15,6 +15,7 @@ import {
   Modal,
   Animated,
   ScrollView,
+  ToastAndroid
 } from 'react-native';
 import io from 'socket.io-client' ;
 import { useUser } from "../../Contexts/UserContext";
@@ -584,6 +585,8 @@ const fetchScoreboard = async () => {
   try {
       console.log("Room ID for fectching scorboard : " + roomId) ;
     const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
+    console.log("Response for Scorecard 1 is " + response.data.leaderboard);
+    console.log("Response for recent Argument is " + response.data.recentArguments);
     if (response.data.success) {
       setLeaderboard(response.data.leaderboard || []);
     }
@@ -1137,12 +1140,28 @@ const endDebate = async () => {
     setSelectedMessage(null);
   };
 
+  const updateDebateSettings = async () => {
+    try {
+        console.log("Settings are " + debateSettings);
+        console.log("User id at this moment is " + userId);
+      const response = await axios.put(`${SERVER_URL}/api/debate/${roomId}/settings`, {
+        userId: userId,
+        settings: debateSettings
+      });
+    console.log("Debate settings are " + response.data);
+      if (response.data.success) {
+        Alert.alert('Success', 'Debate settings updated');
+      }
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      Alert.alert('Error', 'Failed to update settings');
+    }
+  };
+
   const renderMessage = ({ item }) => {
     const isMyMessage = item.userId === userId;
     const messageUserImage = item.userImage || userImages[item.userId] || '';
     const messageStance = item.userStance || roomStances[item.userId]?.stance;
-
-    // Get text color based on stance
     const textColor = getStanceTextColor(messageStance);
     const backgroundColor = getStanceBackgroundColor(messageStance);
 
@@ -1305,7 +1324,6 @@ const endDebate = async () => {
       }
   };
 
-  // Show loading while checking stance
   if (!hasCheckedStance) {
     return (
       <View style={styles.loadingOverlay}>
@@ -1526,7 +1544,7 @@ const endDebate = async () => {
       />
 
       {/* Header */}
-      // In your ChatRoom.js render method, update the header section:
+
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.roomInfo}>
@@ -1649,7 +1667,14 @@ const endDebate = async () => {
           }}
         />
       </View>
-
+        <ScoreboardModal
+              visible={showScoreboard}
+              onClose={() => setShowScoreboard(false)}
+              scores={debateScores}
+              leaderboard={leaderboard}
+              roomId={roomId}
+              userId={userId}
+            />
       {/* Input Area */}
       <View style={[styles.inputContainer, isConnecting && styles.inputContainerDisabled]}>
         <View style={styles.inputRow}>
