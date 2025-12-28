@@ -1117,7 +1117,7 @@ app.get("/api/rooms/:roomId/messages", async (req, res) => {
     const formattedMessages = messages.map(msg => ({
       id: msg._id.toString(),
       text: msg.isDeleted ? "This message was deleted" : msg.text,
-      image: msg.isDeleted ? null : msg.image,
+      image: msg.isDeleted ? null : msg.userImage,
       sender: msg.sender,
       roomId: msg.roomId,
       time: msg.time.toISOString(),

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef , useCallback } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import { useUser } from "../../Contexts/UserContext";
 import { useRoute } from '@react-navigation/native';
 import AIDetectionService from '../services/AIDetectionService';
 import AIContentWarning from '../warning/AIContentWarning';
+
 import axios from 'axios';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com';
@@ -320,6 +321,211 @@ const getUserImageSource = (userImage) => {
   return defaultImages[0].source;
 };
 
+// Move this COMPLETELY outside the ChatRoom component, before "export default function ChatRoom"
+const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId, winner }) => {
+  const [activeTab, setActiveTab] = useState('scores');
+
+  // Remove the debateSettings state from here since it's in parent
+  // Just use the props passed from parent
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={scoreboardStyles.modalOverlay}>
+        <View style={scoreboardStyles.modalContent}>
+          <View style={scoreboardStyles.header}>
+            <Text style={scoreboardStyles.title}>🏆 Debate Scoreboard</Text>
+            <TouchableOpacity onPress={onClose} style={scoreboardStyles.closeButton}>
+              <Text style={scoreboardStyles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={scoreboardStyles.tabContainer}>
+            <TouchableOpacity
+              style={[scoreboardStyles.tab, activeTab === 'scores' && scoreboardStyles.activeTab]}
+              onPress={() => setActiveTab('scores')}
+            >
+              <Text style={scoreboardStyles.tabText}>Team Scores</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[scoreboardStyles.tab, activeTab === 'leaderboard' && scoreboardStyles.activeTab]}
+              onPress={() => setActiveTab('leaderboard')}
+            >
+              <Text style={scoreboardStyles.tabText}>Leaderboard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[scoreboardStyles.tab, activeTab === 'settings' && scoreboardStyles.activeTab]}
+              onPress={() => setActiveTab('settings')}
+            >
+              <Text style={scoreboardStyles.tabText}>Settings</Text>
+            </TouchableOpacity>
+          </View>
+
+          {activeTab === 'scores' && (
+            <ScrollView style={scoreboardStyles.content}>
+              {['favor', 'against', 'neutral'].map((team) => (
+                <View key={team} style={[
+                  scoreboardStyles.teamCard,
+                  winner === team && scoreboardStyles.winningTeamCard
+                ]}>
+                  <View style={scoreboardStyles.teamHeader}>
+                    <Text style={scoreboardStyles.teamName}>
+                      {team === 'favor' ? '👍 In Favor' :
+                       team === 'against' ? '👎 Against' : '🤝 Neutral'}
+                      {winner === team && ' 🏆'}
+                    </Text>
+                    <Text style={scoreboardStyles.teamScore}>
+                      {scores[team]?.average?.toFixed(1) || '0.0'} avg
+                    </Text>
+                  </View>
+
+                  <View style={scoreboardStyles.statsGrid}>
+                    <View style={scoreboardStyles.statItem}>
+                      <Text style={scoreboardStyles.statLabel}>Total Points</Text>
+                      <Text style={scoreboardStyles.statValue}>{scores[team]?.total || 0}</Text>
+                    </View>
+                    <View style={scoreboardStyles.statItem}>
+                      <Text style={scoreboardStyles.statLabel}>Arguments</Text>
+                      <Text style={scoreboardStyles.statValue}>{scores[team]?.count || 0}</Text>
+                    </View>
+                    <View style={scoreboardStyles.statItem}>
+                      <Text style={scoreboardStyles.statLabel}>Participants</Text>
+                      <Text style={scoreboardStyles.statValue}>{scores[team]?.participants || 0}</Text>
+                    </View>
+                  </View>
+
+                  {scores[team]?.count > 0 && (
+                    <View style={scoreboardStyles.progressBar}>
+                      <View
+                        style={[
+                          scoreboardStyles.progressFill,
+                          {
+                            width: `${Math.min(100, (scores[team].average / 10) * 100)}%`,
+                            backgroundColor: team === 'favor' ? '#10b981' :
+                                           team === 'against' ? '#ef4444' : '#6b7280'
+                          }
+                        ]}
+                      />
+                    </View>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {activeTab === 'leaderboard' && (
+            <ScrollView style={scoreboardStyles.content}>
+              {leaderboard.length > 0 ? (
+                leaderboard.map((player, index) => (
+                  <View key={index} style={scoreboardStyles.leaderboardRow}>
+                    <Text style={scoreboardStyles.rank}>#{index + 1}</Text>
+                    <View style={scoreboardStyles.playerInfo}>
+                      <Text style={scoreboardStyles.playerName}>{player.username}</Text>
+                      <View style={scoreboardStyles.playerDetails}>
+                        <Text style={scoreboardStyles.playerTeam}>
+                          {player.team === 'favor' ? '👍' :
+                           player.team === 'against' ? '👎' : '🤝'}
+                        </Text>
+                        <Text style={scoreboardStyles.playerStats}>
+                          {player.argumentCount} args • {player.averageScore.toFixed(1)} avg
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={scoreboardStyles.playerScore}>{player.totalScore}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={scoreboardStyles.emptyText}>No leaderboard data yet</Text>
+              )}
+            </ScrollView>
+          )}
+
+          {activeTab === 'settings' && (
+            <ScoreboardSettingsTab
+              debateSettings={debateSettings}
+              setDebateSettings={setDebateSettings}
+              updateDebateSettings={updateDebateSettings}
+            />
+          )}
+
+          <TouchableOpacity
+            style={scoreboardStyles.endDebateButton}
+            onPress={endDebate}
+          >
+            <Text style={scoreboardStyles.endDebateButtonText}>End Debate Now</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Add a separate component for the settings tab
+const ScoreboardSettingsTab = ({ debateSettings, setDebateSettings, updateDebateSettings }) => {
+  const [tempSettings, setTempSettings] = useState(debateSettings);
+
+  const handleSave = () => {
+    setDebateSettings(tempSettings);
+    updateDebateSettings();
+  };
+
+  return (
+    <ScrollView style={scoreboardStyles.content}>
+      <Text style={scoreboardStyles.sectionTitle}>Debate Settings</Text>
+
+      <View style={scoreboardStyles.settingItem}>
+        <Text style={scoreboardStyles.settingLabel}>Max Duration (minutes)</Text>
+        <TextInput
+          style={scoreboardStyles.settingInput}
+          value={tempSettings.maxDuration.toString()}
+          onChangeText={(text) => setTempSettings({
+            ...tempSettings,
+            maxDuration: parseInt(text) || 30
+          })}
+          keyboardType="numeric"
+        />
+      </View>
+
+      <View style={scoreboardStyles.settingItem}>
+        <Text style={scoreboardStyles.settingLabel}>Max Arguments</Text>
+        <TextInput
+          style={scoreboardStyles.settingInput}
+          value={tempSettings.maxArguments.toString()}
+          onChangeText={(text) => setTempSettings({
+            ...tempSettings,
+            maxArguments: parseInt(text) || 50
+          })}
+          keyboardType="numeric"
+        />
+      </View>
+
+      <View style={scoreboardStyles.settingItem}>
+        <Text style={scoreboardStyles.settingLabel}>Win Margin Threshold (%)</Text>
+        <TextInput
+          style={scoreboardStyles.settingInput}
+          value={tempSettings.winMarginThreshold.toString()}
+          onChangeText={(text) => setTempSettings({
+            ...tempSettings,
+            winMarginThreshold: parseInt(text) || 10
+          })}
+          keyboardType="numeric"
+        />
+      </View>
+
+      <TouchableOpacity
+        style={scoreboardStyles.saveButton}
+        onPress={handleSave}
+      >
+        <Text style={scoreboardStyles.saveButtonText}>Save Settings</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+};
+
 export default function ChatRoom({ route }) {
   const socketRef = useRef(null);
   const flatListRef = useRef(null);
@@ -333,6 +539,8 @@ export default function ChatRoom({ route }) {
   const [aiWarningVisible, setAiWarningVisible] = useState(false);
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
+  // Add this to your state
+  const [loadingScoreboard, setLoadingScoreboard] = useState(false);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
   const [userImages, setUserImages] = useState({});
   // In your ChatRoom component's state
@@ -408,42 +616,43 @@ export default function ChatRoom({ route }) {
     const stanceData = stanceColors[stance];
     return stanceData ? stanceData.light : '#f8fafc';
   };
+
 useEffect(() => {
   if (!socketRef.current) return;
 
-  // Listen for score updates
-  socketRef.current.on('score_updated', (data) => {
+  const socket = socketRef.current;
+
+  const handleScoreUpdated = (data) => {
     if (data.roomId === roomId) {
       setDebateScores(data.teamScores);
     }
-  });
+  };
 
-  // Listen for debate end
-  socketRef.current.on('debate_ended', (data) => {
+  const handleDebateEnded = (data) => {
     if (data.roomId === roomId) {
       setWinner(data.winner);
       setDebateEnded(true);
       showWinnerModal(data);
     }
-  });
+  };
 
-  // Listen for argument evaluations
-  socketRef.current.on('argument_evaluated', (data) => {
+  const handleArgumentEvaluated = (data) => {
     if (data.roomId === roomId && data.userId !== userId) {
-      // Show notification for other users' evaluations
       ToastAndroid.show(
         `${data.username}'s argument scored ${data.totalScore} points`,
         ToastAndroid.SHORT
       );
     }
-  });
+  };
+
+  socket.on('score_updated', handleScoreUpdated);
+  socket.on('debate_ended', handleDebateEnded);
+  socket.on('argument_evaluated', handleArgumentEvaluated);
 
   return () => {
-    if (socketRef.current) {
-      socketRef.current.off('score_updated');
-      socketRef.current.off('debate_ended');
-      socketRef.current.off('argument_evaluated');
-    }
+    socket.off('score_updated', handleScoreUpdated);
+    socket.off('debate_ended', handleDebateEnded);
+    socket.off('argument_evaluated', handleArgumentEvaluated);
   };
 }, [roomId, userId]);
 
@@ -457,6 +666,7 @@ const handleMessage = async () => {
   // First, send the message to chat
   const messageData = {
     text: text.trim(),
+    image : user?.user_image || '',
     sender: username,
     userId: userId,
     userImage: user?.user_image || '',
@@ -581,19 +791,27 @@ const showWinnerModal = (winnerData) => {
   );
 };
 
-const fetchScoreboard = async () => {
+const fetchScoreboard = useCallback(async () => {
   try {
-      console.log("Room ID for fectching scorboard : " + roomId) ;
+    setLoadingScoreboard(true);
+    console.log("Room ID for fetching scoreboard:", roomId);
     const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
-    console.log("Response for Scorecard 1 is " + response.data.leaderboard);
-    console.log("Response for recent Argument is " + response.data.recentArguments);
+
     if (response.data.success) {
       setLeaderboard(response.data.leaderboard || []);
+      if (response.data.standings) {
+        setDebateScores(response.data.standings);
+      }
+      if (response.data.winner) {
+        setWinner(response.data.winner);
+      }
     }
   } catch (error) {
     console.error('Error fetching scoreboard:', error);
+  } finally {
+    setLoadingScoreboard(false);
   }
-};
+}, [roomId]); // Add useCallback with dependency
 
 const endDebate = async () => {
   Alert.alert(
@@ -1165,6 +1383,24 @@ const endDebate = async () => {
     const textColor = getStanceTextColor(messageStance);
     const backgroundColor = getStanceBackgroundColor(messageStance);
 
+    // If message has evaluation score, show badge - but make sure it's part of the same return
+    const ScoreBadge = () => {
+      if (item.evaluationScore && !item.isDeleted) {
+        return (
+          <View style={[
+            styles.scoreBadge,
+            {
+              backgroundColor: item.evaluationScore > 40 ? '#10b981' :
+                             item.evaluationScore > 30 ? '#f59e0b' : '#ef4444'
+            }
+          ]}>
+            <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
+          </View>
+        );
+      }
+      return null;
+    };
+
     return (
       <Animated.View
         style={[
@@ -1200,6 +1436,9 @@ const endDebate = async () => {
           delayLongPress={500}
           activeOpacity={0.7}
         >
+          {/* Score badge positioned absolutely */}
+          <ScoreBadge />
+
           {/* User info for other users' messages */}
           {!item.isSystem && !isMyMessage && !item.isDeleted && (
             <View style={styles.msgUserInfo}>
@@ -1307,23 +1546,8 @@ const endDebate = async () => {
           </View>
         )}
       </Animated.View>
-
     );
-    if (item.evaluationScore && !item.isDeleted) {
-        return (
-          <View style={styles.messageWithScore}>
-            <View style={[
-              styles.scoreBadge,
-              { backgroundColor: item.evaluationScore > 40 ? '#10b981' :
-                               item.evaluationScore > 30 ? '#f59e0b' : '#ef4444' }
-            ]}>
-              <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
-            </View>
-          </View>
-        );
-      }
   };
-
   if (!hasCheckedStance) {
     return (
       <View style={styles.loadingOverlay}>
@@ -1345,6 +1569,12 @@ const endDebate = async () => {
         visible={visible}
         onRequestClose={onClose}
       >
+        {loadingScoreboard && (
+          <View style={scoreboardStyles.loadingContainer}>
+            <ActivityIndicator size="large" color="#667eea" />
+            <Text style={scoreboardStyles.loadingText}>Loading scoreboard...</Text>
+          </View>
+        )}
         <View style={scoreboardStyles.modalOverlay}>
           <View style={scoreboardStyles.modalContent}>
             <View style={scoreboardStyles.header}>
@@ -1622,13 +1852,18 @@ const endDebate = async () => {
       )}
     <View style={styles.rightSideButtons}>
                               {/* Scorecard Button */}
+
                               <TouchableOpacity
                                 style={styles.floatingScoreButton}
                                 onPress={() => {
-                                  fetchScoreboard();
-                                  setShowScoreboard(true);
+
+                                  if (!showScoreboard) {
+                                    fetchScoreboard();
+                                    setShowScoreboard(true);
+                                  }
                                 }}
                                 activeOpacity={0.7}
+                                disabled={showScoreboard}
                               >
                                 <View style={styles.scoreButtonContent}>
                                   <Text style={styles.scoreButtonIcon}>📊</Text>
@@ -2651,5 +2886,21 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 100,
         paddingHorizontal: 20, // Add horizontal padding
+      },
+      loadingContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+      },
+      loadingText: {
+        marginTop: 12,
+        color: '#64748b',
+        fontSize: 14,
       },
 });
