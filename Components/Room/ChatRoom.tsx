@@ -663,9 +663,18 @@ const handleMessage = async () => {
     return;
   }
 
+  const cleanedText = text
+        .replace(/\n\s*\n\s*\n/g, '\n\n') // Replace 3+ line breaks with 2
+        .replace(/^\s+|\s+$/g, '') // Trim start/end whitespace
+        .replace(/\s+$/gm, ''); // Trim trailing whitespace from each line
+
+  if (!cleanedText.trim()) {
+        Alert.alert('Error', 'Message cannot be empty');
+        return;
+  }
   // First, send the message to chat
   const messageData = {
-    text: text.trim(),
+    text: cleanedText,
     image : user?.user_image || '',
     sender: username,
     userId: userId,
@@ -1381,6 +1390,7 @@ const endDebate = async () => {
     const isMyMessage = item.userId === userId;
     const messageUserImage = item.userImage || userImages[item.userId] || '';
     const messageStance = item.userStance || roomStances[item.userId]?.stance;
+    const shouldShowAvatar = !isMyMessage && !item.isSystem && !item.isDeleted && messageUserImage;
     const textColor = getStanceTextColor(messageStance);
     const backgroundColor = getStanceBackgroundColor(messageStance);
 
@@ -1410,6 +1420,7 @@ const endDebate = async () => {
           { opacity: fadeAnim }
         ]}
       >
+
         {/* User Avatar for other users' messages */}
         {!isMyMessage && !item.isSystem && !item.isDeleted && (
           <View style={styles.userAvatarContainer}>

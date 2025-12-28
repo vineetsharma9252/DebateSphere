@@ -87,14 +87,21 @@ io.on("connection", (socket) => {
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
     try {
-      // Fetch previous messages with proper user image handling
       const messages = await Message.find({ roomId, isDeleted: false })
         .sort({ time: 1 })
         .limit(50)
         .lean();
 
-      // Process each message to ensure proper userImage
       const formattedMessages = await Promise.all(messages.map(async (msg) => {
+        // Clean the text for display
+        let displayText = msg.text || '';
+        if (displayText) {
+          displayText = displayText
+            .replace(/\n\s*\n\s*\n/g, '\n\n')
+            .replace(/^\s+|\s+$/g, '')
+            .replace(/\s+$/gm, '');
+        }
+
         // If userImage is empty but we have userId, try to fetch it
         let userImageToUse = msg.userImage || '';
 
@@ -111,11 +118,11 @@ io.on("connection", (socket) => {
 
         return {
           id: msg._id.toString(),
-          text: msg.text,
-          image: userImageToUse, // Use the fetched/saved userImage
+          text: displayText, // Use cleaned text
+          image: userImageToUse,
           sender: msg.sender,
           userId: msg.userId,
-          userImage: userImageToUse, // Same as image
+          userImage: userImageToUse,
           roomId: msg.roomId,
           time: msg.time.toISOString(),
           isDeleted: msg.isDeleted,
@@ -352,9 +359,25 @@ socket.on("send_message", async (data, callback) => {
     // Ensure image and userImage are the same
     const userImage = data.userImage || '';
 
+    let cleanedText = data.text || "";
+
+        // Clean up the text: remove multiple consecutive line breaks and trim
+        if (cleanedText) {
+            cleanedText = cleanedText
+                .replace(/\n\s*\n\s*\n/g, '\n\n') // Replace 3+ line breaks with 2
+                .replace(/^\s+|\s+$/g, '') // Trim start/end whitespace
+                .replace(/\s+$/gm, ''); // Trim trailing whitespace from each line
+        }
+
+        // If after cleaning, text is empty, don't save
+        if (!cleanedText.trim() && !data.image) {
+            if (callback) callback({ status: "error", error: "Message cannot be empty" });
+            return;
+        }
+
     try {
         const messageData = {
-            text: data.text || "",
+            text: cleanedText,
             image: userImage, // Set image to userImage
             sender: data.sender,
             userId: data.userId || "",
@@ -601,6 +624,38 @@ socket.on("send_message", async (data, callback) => {
 
 // REST API routes
 // Backend endpoint to get user by ID
+async function cleanupExistingMessages() {
+  try {
+    const messages = await Message.find({});
+    let cleanedCount = 0;
+
+    for (const msg of messages) {
+      if (msg.text) {
+        const originalText = msg.text;
+        const cleanedText = originalText
+          .replace(/\n\s*\n\s*\n/g, '\n\n')
+          .replace(/^\s+|\s+$/g, '')
+          .replace(/\s+$/gm, '');
+
+        if (cleanedText !== originalText) {
+          msg.text = cleanedText;
+          await msg.save();
+          cleanedCount++;
+          console.log(`Cleaned message ${msg._id}:`, {
+            original: originalText.substring(0, 50),
+            cleaned: cleanedText.substring(0, 50)
+          });
+        }
+      }
+    }
+
+    console.log(`✅ Cleaned ${cleanedCount} messages`);
+  } catch (error) {
+    console.error('Cleanup error:', error);
+  }
+}
+
+
 async function updateTeamScore(roomId, team, score, userId) { // ✅ Add userId parameter
   try {
     let debateResult = await DebateResult.findOne({ roomId });
@@ -1091,17 +1146,28 @@ app.get("/api/rooms/:roomId/messages", async (req, res) => {
       .limit(100)
       .lean();
 
-    const formattedMessages = messages.map(msg => ({
-      id: msg._id.toString(),
-      text: msg.isDeleted ? "This message was deleted" : msg.text,
-      image: msg.isDeleted ? null : msg.userImage,
-      sender: msg.sender,
-      roomId: msg.roomId,
-      time: msg.time.toISOString(),
-      isDeleted: msg.isDeleted,
-      deletedAt: msg.deletedAt ? msg.deletedAt.toISOString() : null,
-      deletedBy: msg.deletedBy || null,
-    }));
+    const formattedMessages = messages.map(msg => {
+          // Clean the text for display
+          let displayText = msg.text || '';
+          if (!msg.isDeleted && displayText) {
+            displayText = displayText
+              .replace(/\n\s*\n\s*\n/g, '\n\n')
+              .replace(/^\s+|\s+$/g, '')
+              .replace(/\s+$/gm, '');
+          }
+
+          return {
+            id: msg._id.toString(),
+            text: msg.isDeleted ? "This message was deleted" : displayText,
+            image: msg.isDeleted ? null : msg.userImage,
+            sender: msg.sender,
+            roomId: msg.roomId,
+            time: msg.time.toISOString(),
+            isDeleted: msg.isDeleted,
+            deletedAt: msg.deletedAt ? msg.deletedAt.toISOString() : null,
+            deletedBy: msg.deletedBy || null,
+          };
+    });
 
     res.json({ success: true, messages: formattedMessages });
   } catch (err) {
@@ -1529,6 +1595,13 @@ async function determineWinner(roomId) {
 
 app.post("/evaluate", async (req, res) => {
     const { argument, team, roomId, userId, username, messageId } = req.body;
+
+    if (argument) {
+            argument = argument
+                .replace(/\n\s*\n\s*\n/g, '\n\n')
+                .replace(/^\s+|\s+$/g, '')
+                .replace(/\s+$/gm, '');
+        }
 
     // Validate input
     if (!argument || argument.trim().length < 10) {
