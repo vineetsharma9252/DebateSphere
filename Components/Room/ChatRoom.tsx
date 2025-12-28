@@ -865,23 +865,31 @@ const endDebate = async () => {
 
   // Function to get user image from cache or fetch it
   const getUserImage = async (messageUserId, messageUsername) => {
+    // Check cache first
     if (userImages[messageUserId]) {
       return userImages[messageUserId];
     }
 
+    // If it's current user, use their image
     if (messageUserId === userId) {
       return userImage;
     }
 
-    const fetchedUserImage = await fetchUserImageById(messageUserId);
-    if (fetchedUserImage) {
-      setUserImages(prev => ({
-        ...prev,
-        [messageUserId]: fetchedUserImage
-      }));
-      return fetchedUserImage;
+    // Try to fetch from server
+    try {
+      const fetchedUserImage = await fetchUserImageById(messageUserId);
+      if (fetchedUserImage) {
+        setUserImages(prev => ({
+          ...prev,
+          [messageUserId]: fetchedUserImage
+        }));
+        return fetchedUserImage;
+      }
+    } catch (error) {
+      console.error('Error fetching user image:', error);
     }
 
+    // Return empty string if not found (not null)
     return '';
   };
 
@@ -987,55 +995,46 @@ const endDebate = async () => {
     socketRef.current.on('receive_message', async (msg) => {
       console.log('Received message:', msg);
 
-      if (Array.isArray(msg)) {
-        const messagesWithIds = await Promise.all(
-          msg.map(async (message) => {
-            const messageUserId = message.userId || message.senderId;
-            let userImageToUse = message.userImage || '';
+      const processMessage = async (message) => {
+        const messageUserId = message.userId || message.senderId;
 
-            if (!userImageToUse && messageUserId) {
-              userImageToUse = await getUserImage(messageUserId, message.sender);
-            }
+        // Use the image field from server (which should be same as userImage)
+        let userImageToUse = message.image || message.userImage || '';
 
-            return {
-              ...message,
-              id: message.id || generateMessageId(),
-              isDeleted: message.isDeleted || false,
-              userId: messageUserId,
-              userImage: userImageToUse
-            };
-          })
-        );
-
-        setMessages(messagesWithIds);
-      } else {
-        const messageUserId = msg.userId || msg.senderId;
-        let userImageToUse = msg.userImage || '';
-
+        // If still empty, try to fetch
         if (!userImageToUse && messageUserId) {
-          userImageToUse = await getUserImage(messageUserId, msg.sender);
+          userImageToUse = await getUserImage(messageUserId, message.sender);
         }
 
-        const messageWithId = {
-          ...msg,
-          id: msg.id || generateMessageId(),
-          isDeleted: msg.isDeleted || false,
+        return {
+          ...message,
+          id: message.id || generateMessageId(),
+          isDeleted: message.isDeleted || false,
           userId: messageUserId,
-          userImage: userImageToUse
+          userImage: userImageToUse,
+          // Ensure image field is also populated
+          image: message.image || userImageToUse
         };
+      };
 
+      if (Array.isArray(msg)) {
+        const messagesWithIds = await Promise.all(msg.map(processMessage));
+        setMessages(messagesWithIds);
+      } else {
+        const messageWithId = await processMessage(msg);
         setMessages((prev) => {
           return [messageWithId, ...prev];
         });
       }
     });
 
+    // Update previous_messages handler similarly
     socketRef.current.on('previous_messages', async (msgs) => {
       if (Array.isArray(msgs)) {
         const messagesWithIds = await Promise.all(
           msgs.reverse().map(async (msg) => {
             const messageUserId = msg.userId || msg.senderId;
-            let userImageToUse = msg.userImage || '';
+            let userImageToUse = msg.image || msg.userImage || '';
 
             if (!userImageToUse && messageUserId) {
               userImageToUse = await getUserImage(messageUserId, msg.sender);
@@ -1046,7 +1045,8 @@ const endDebate = async () => {
               id: msg.id || generateMessageId(),
               isDeleted: msg.isDeleted || false,
               userId: messageUserId,
-              userImage: userImageToUse
+              userImage: userImageToUse,
+              image: msg.image || userImageToUse
             };
           })
         );
@@ -1054,6 +1054,7 @@ const endDebate = async () => {
         setMessages(messagesWithIds);
       }
     });
+
 
     // Handle message deletion events
     socketRef.current.on('message_deleted', (deletedMessage) => {

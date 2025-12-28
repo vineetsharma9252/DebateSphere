@@ -82,50 +82,49 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
-  socket.on("join_room", async (roomId) => {
+  socket.on('join_room', async (roomId) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
-    try {
-          const stances = await UserStance.find({ roomId }).lean();
-          const stancesMap = {};
-          stances.forEach(stance => {
-            stancesMap[stance.userId] = {
-              userId: stance.userId,
-              username: stance.username,
-              stance: stance.stance,
-              stanceLabel: stance.stanceLabel,
-              userImage: stance.userImage
-            };
-          });
-
-          socket.emit('room_stances', stancesMap);
-        } catch (error) {
-          console.error('Error fetching room stances:', error);
-        }
-
-    io.to(roomId).emit("receive_message", {
-      text: `A user has joined the room`,
-      sender: "System",
-      roomId,
-      time: new Date().toISOString(),
-      isSystem: true,
-    });
 
     try {
-      const messages = await Message.find({ roomId })
+      // Fetch previous messages with proper user image handling
+      const messages = await Message.find({ roomId, isDeleted: false })
         .sort({ time: 1 })
         .limit(50)
         .lean();
 
-      const formattedMessages = messages.map((msg) => ({
-        id: msg._id.toString(),
-        text: msg.isDeleted ? "This message was deleted" : msg.text,
-        image: msg.isDeleted ? null : msg.userImage,
-        sender: msg.sender,
-        roomId: msg.roomId,
-        time: msg.time.toISOString(),
-        isDeleted: msg.isDeleted,
-        isSystem: msg.sender === "System",
+      // Process each message to ensure proper userImage
+      const formattedMessages = await Promise.all(messages.map(async (msg) => {
+        // If userImage is empty but we have userId, try to fetch it
+        let userImageToUse = msg.userImage || '';
+
+        if (!userImageToUse && msg.userId) {
+          try {
+            const user = await User.findById(msg.userId);
+            if (user && user.user_image) {
+              userImageToUse = user.user_image;
+            }
+          } catch (error) {
+            console.error(`Error fetching user image for ${msg.userId}:`, error);
+          }
+        }
+
+        return {
+          id: msg._id.toString(),
+          text: msg.text,
+          image: userImageToUse, // Use the fetched/saved userImage
+          sender: msg.sender,
+          userId: msg.userId,
+          userImage: userImageToUse, // Same as image
+          roomId: msg.roomId,
+          time: msg.time.toISOString(),
+          isDeleted: msg.isDeleted,
+          isSystem: msg.sender === "System",
+          userStance: msg.userStance,
+          stanceLabel: msg.stanceLabel,
+          aiDetected: msg.aiDetected,
+          aiConfidence: msg.aiConfidence
+        };
       }));
 
       socket.emit("previous_messages", formattedMessages);
@@ -349,47 +348,30 @@ socket.on('user_stance_selected', async (data, callback) => {
     });
 socket.on("send_message", async (data, callback) => {
     console.log(`💬 Message from ${data.sender} in room ${data.roomId}: ${data.text || "Image"}`);
-    console.log("Message data received:", {
-        sender: data.sender,
-        userId: data.userId,
-        userImage: data.userImage,
-        roomId: data.roomId,
-        hasText: !!data.text,
-        hasImage: !!data.image
-    });
 
-    if (data.image) {
-        if (!data.image.startsWith("data:image/")) {
-            if (callback) callback({ status: "error", error: "Invalid image format" });
-            return;
-        }
-        if (data.image.length > 7 * 1024 * 1024) {
-            if (callback) callback({ status: "error", error: "Image size exceeds 5MB" });
-            return;
-        }
-    }
+    // Ensure image and userImage are the same
+    const userImage = data.userImage || '';
 
     try {
         const messageData = {
             text: data.text || "",
-            image: data.userImage || "",
+            image: userImage, // Set image to userImage
             sender: data.sender,
-            userId: data.userId || "", // Add userId
-            userImage: data.userImage || "", // Add userImage
+            userId: data.userId || "",
+            userImage: userImage, // Both fields same
             roomId: data.roomId,
             time: new Date(data.time),
             isDeleted: false,
-            aiDetected: data.aiDetected || false, // Add AI detection fields
+            aiDetected: data.aiDetected || false,
             aiConfidence: data.aiConfidence || 0,
-            userStance: data.userStance?.id || data.userStance || "", // Include stance
+            userStance: data.userStance?.id || data.userStance || "",
             stanceLabel: data.userStance?.label || ""
         };
 
-        console.log("Saving message with user data:", {
+        console.log("Saving message with unified image/userImage:", {
             userId: messageData.userId,
-            userImage: messageData.userImage,
-            sender: messageData.sender,
-            userStance: data.userStance,
+            image: messageData.image,
+            userImage: messageData.userImage
         });
 
         const savedMessage = await new Message(messageData).save();
@@ -397,23 +379,18 @@ socket.on("send_message", async (data, callback) => {
         const broadcastMessage = {
             id: savedMessage._id.toString(),
             text: savedMessage.text,
-            image: savedMessage.userImage,
+            image: savedMessage.image, // Use image field
             sender: savedMessage.sender,
-            userId: savedMessage.userId, // Include userId in broadcast
-            userImage: savedMessage.userImage, // Include userImage in broadcast
+            userId: savedMessage.userId,
+            userImage: savedMessage.userImage, // Both will be the same
             roomId: savedMessage.roomId,
             time: savedMessage.time.toISOString(),
             isDeleted: false,
             aiDetected: savedMessage.aiDetected,
             aiConfidence: savedMessage.aiConfidence,
-            userStance: savedMessage.userStance, // Include in broadcast
-            stanceLabel: savedMessage.stanceLabel // Include in broadcast
+            userStance: savedMessage.userStance,
+            stanceLabel: savedMessage.stanceLabel
         };
-
-        console.log("Broadcasting message with user data:", {
-            userId: broadcastMessage.userId,
-            userImage: broadcastMessage.userImage
-        });
 
         io.to(data.roomId).emit("receive_message", broadcastMessage);
 
