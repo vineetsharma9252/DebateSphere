@@ -120,7 +120,7 @@ io.on("connection", (socket) => {
       const formattedMessages = messages.map((msg) => ({
         id: msg._id.toString(),
         text: msg.isDeleted ? "This message was deleted" : msg.text,
-        image: msg.isDeleted ? null : msg.image,
+        image: msg.isDeleted ? null : msg.userImage,
         sender: msg.sender,
         roomId: msg.roomId,
         time: msg.time.toISOString(),
@@ -372,7 +372,7 @@ socket.on("send_message", async (data, callback) => {
     try {
         const messageData = {
             text: data.text || "",
-            image: data.image || "",
+            image: data.userImage || "",
             sender: data.sender,
             userId: data.userId || "", // Add userId
             userImage: data.userImage || "", // Add userImage
@@ -397,7 +397,7 @@ socket.on("send_message", async (data, callback) => {
         const broadcastMessage = {
             id: savedMessage._id.toString(),
             text: savedMessage.text,
-            image: savedMessage.image,
+            image: savedMessage.userImage,
             sender: savedMessage.sender,
             userId: savedMessage.userId, // Include userId in broadcast
             userImage: savedMessage.userImage, // Include userImage in broadcast
