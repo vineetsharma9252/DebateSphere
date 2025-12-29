@@ -378,7 +378,7 @@ socket.on("send_message", async (data, callback) => {
     try {
         const messageData = {
             text: cleanedText,
-            image: userImage, // Set image to userImage
+            image: "", // Set image to userImage
             sender: data.sender,
             userId: data.userId || "",
             userImage: userImage, // Both fields same
