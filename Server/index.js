@@ -119,7 +119,7 @@ io.on("connection", (socket) => {
         return {
           id: msg._id.toString(),
           text: displayText, // Use cleaned text
-          image: userImageToUse,
+          image: msg.image,
           sender: msg.sender,
           userId: msg.userId,
           userImage: userImageToUse,

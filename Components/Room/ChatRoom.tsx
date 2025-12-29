@@ -691,7 +691,7 @@ const handleMessage = async () => {
       // Then evaluate the argument
       try {
         const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-          argument: text.trim(),
+          argument: cleanedText,
           team: userStance.id.ToLowerCase() || userStance,
           roomId: roomId,
           userId: userId,
@@ -1178,9 +1178,14 @@ const endDebate = async () => {
 
   const proceedWithMessage = (messageText, imageData, isAIDetected = false) => {
     const currentUserImage = user?.user_image || userImage || '';
+    const cleanedText = messageText
+        .replace(/\n\s*\n\s*\n/g, '\n\n')
+        .replace(/^\s+|\s+$/g, '')
+        .replace(/\s+$/gm, '')
+        .replace(/\n{3,}/g, '\n\n');
 
     const messageData = {
-      text: messageText,
+      text: cleanedText,
       image: imageData,
       sender: username,
       userId: userId,
@@ -1391,83 +1396,61 @@ const endDebate = async () => {
     const messageUserImage = item.userImage || userImages[item.userId] || '';
     const messageStance = item.userStance || roomStances[item.userId]?.stance;
     const shouldShowAvatar = !isMyMessage && !item.isSystem && !item.isDeleted && messageUserImage;
+
     const textColor = getStanceTextColor(messageStance);
     const backgroundColor = getStanceBackgroundColor(messageStance);
 
-    // If message has evaluation score, show badge - but make sure it's part of the same return
-    const ScoreBadge = () => {
-      if (item.evaluationScore && !item.isDeleted) {
-        return (
-          <View style={[
-            styles.scoreBadge,
-            {
-              backgroundColor: item.evaluationScore > 40 ? '#10b981' :
-                             item.evaluationScore > 30 ? '#f59e0b' : '#ef4444'
-            }
-          ]}>
-            <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
-          </View>
-        );
-      }
-      return null;
-    };
+    // Get the actual message text
+    const messageText = item.text || '';
+
+    // If text is empty and no image, don't render content
+    const hasContent = messageText.trim().length > 0 || item.image;
 
     return (
-      <Animated.View
-        style={[
-          styles.msgContainer,
-          isMyMessage && styles.myMsgContainer,
-          { opacity: fadeAnim }
-        ]}
-      >
+      <View style={[
+        styles.messageRow,
+        isMyMessage ? styles.myMessageRow : styles.theirMessageRow
+      ]}>
 
-        {/* User Avatar for other users' messages */}
-        {!isMyMessage && !item.isSystem && !item.isDeleted && (
-          <View style={styles.userAvatarContainer}>
+        {/* Avatar for others' messages */}
+        {!isMyMessage && shouldShowAvatar && (
+          <View style={styles.avatarWrapper}>
             <Image
               source={getUserImageSource(messageUserImage)}
-              style={styles.userAvatar}
+              style={styles.avatar}
             />
           </View>
         )}
 
-        <TouchableOpacity
-          style={[
-            styles.msgBox,
-            isMyMessage ? styles.myMsg : styles.theirMsg,
-            item.isSystem && styles.systemMsg,
-            item.isDeleted && styles.deletedMsg,
-            item.aiDetected && styles.aiDetectedMsg,
+        {/* Message Bubble */}
+        <View style={[
+          styles.bubbleWrapper,
+          isMyMessage && styles.myBubbleWrapper
+        ]}>
+          <View style={[
+            styles.messageBubble,
+            isMyMessage ? styles.myBubble : styles.theirBubble,
+            item.isDeleted && styles.deletedBubble,
             !isMyMessage && !item.isSystem && !item.isDeleted && {
               backgroundColor: backgroundColor,
               borderLeftWidth: 4,
               borderLeftColor: stanceColors[messageStance]?.background || '#e2e8f0'
             },
-          ]}
-          onLongPress={() => handleMessageLongPress(item)}
-          delayLongPress={500}
-          activeOpacity={0.7}
-        >
-          {/* Score badge positioned absolutely */}
-          <ScoreBadge />
+          ]}>
 
-          {/* User info for other users' messages */}
-          {!item.isSystem && !isMyMessage && !item.isDeleted && (
-            <View style={styles.msgUserInfo}>
-              <View style={styles.userInfoRow}>
-                <Text style={[
-                  styles.msgUser,
-                  { color: textColor }
-                ]}>
+            {/* User info for others' messages */}
+            {!isMyMessage && !item.isSystem && !item.isDeleted && (
+              <View style={styles.userInfo}>
+                <Text style={[styles.username, { color: textColor }]}>
                   {item.sender}
                 </Text>
                 {messageStance && (
                   <View style={[
-                    styles.stanceBadge,
+                    styles.stanceTag,
                     { backgroundColor: `${stanceColors[messageStance]?.background}20` }
                   ]}>
                     <Text style={[
-                      styles.stanceBadgeText,
+                      styles.stanceTagText,
                       { color: stanceColors[messageStance]?.background }
                     ]}>
                       {stanceLabels[messageStance] || messageStance}
@@ -1475,89 +1458,97 @@ const endDebate = async () => {
                   </View>
                 )}
               </View>
-            </View>
-          )}
+            )}
 
-          {/* My message stance indicator */}
-          {isMyMessage && userStance && !item.isSystem && !item.isDeleted && (
-            <View style={styles.myStanceIndicator}>
-              <Text style={[
-                styles.myStanceText,
-                { color: stanceColors[userStance.id]?.text || stanceColors[userStance]?.text }
-              ]}>
-                Debating: {userStance.label || stanceLabels[userStance]}
-              </Text>
-            </View>
-          )}
-
-          {item.aiDetected && (
-            <View style={styles.aiWarningBadge}>
-              <Text style={styles.aiWarningText}>🤖 AI Detected</Text>
-            </View>
-          )}
-
-          {item.isDeleted ? (
-            <View style={styles.deletedContent}>
-              <Text style={styles.deletedIcon}>🗑️</Text>
-              <Text style={styles.deletedText}>
-                This message was deleted
-              </Text>
-            </View>
-          ) : (
-            <>
-              {item.text && (
-                <Text
-                  style={[
-                    styles.msgText,
-                    isMyMessage && styles.myMsgText,
-                    item.isSystem && styles.systemMsgText,
-                    !isMyMessage && !item.isSystem && { color: textColor }
-                  ]}
-                >
-                  {item.text}
+            {/* My stance indicator */}
+            {isMyMessage && userStance && !item.isSystem && !item.isDeleted && (
+              <View style={styles.myStance}>
+                <Text style={[
+                  styles.myStanceText,
+                  { color: stanceColors[userStance.id]?.text || stanceColors[userStance]?.text }
+                ]}>
+                  Debating: {userStance.label || stanceLabels[userStance]}
                 </Text>
-              )}
-              {item.image && (
-                <Image
-                  source={{ uri: item.image }}
-                  style={styles.msgImage}
-                  resizeMode="cover"
-                />
-              )}
-            </>
-          )}
+              </View>
+            )}
 
-          <Text style={[
-            styles.msgTime,
-            isMyMessage && styles.myMsgTime,
-            item.isDeleted && styles.deletedMsgTime,
-            !isMyMessage && !item.isSystem && !item.isDeleted && { color: `${textColor}80` }
-          ]}>
-            {new Date(item.time).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-            {item.isDeleted && ' • Deleted'}
-          </Text>
+            {/* AI Detection */}
+            {item.aiDetected && !item.isDeleted && (
+              <View style={styles.aiTag}>
+                <Text style={styles.aiTagText}>🤖 AI Detected</Text>
+              </View>
+            )}
 
-          {/* Edit/Delete indicator for user's messages */}
-          {isMyMessage && !item.isSystem && !item.isDeleted && (
-            <View style={styles.messageOptionsIndicator}>
+            {/* Score Badge */}
+            {item.evaluationScore && !item.isDeleted && (
+              <View style={[
+                styles.scoreBadge,
+                {
+                  backgroundColor: item.evaluationScore > 40 ? '#10b981' :
+                                 item.evaluationScore > 30 ? '#f59e0b' : '#ef4444'
+                }
+              ]}>
+                <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
+              </View>
+            )}
+
+            {/* ACTUAL MESSAGE CONTENT - This is the main fix */}
+            {item.isDeleted ? (
+              <View style={styles.deletedWrapper}>
+                <Text style={styles.deletedIcon}>🗑️</Text>
+                <Text style={styles.deletedText}>This message was deleted</Text>
+              </View>
+            ) : hasContent ? (
+              <View style={styles.contentWrapper}>
+                {messageText.trim().length > 0 && (
+                  <Text style={[
+                    styles.messageText,
+                    isMyMessage && styles.myMessageText,
+                    item.isSystem && styles.systemText,
+                    !isMyMessage && !item.isSystem && { color: textColor }
+                  ]}>
+                    {messageText}
+                  </Text>
+                )}
+                {item.image && (
+                  <Image
+                    source={{ uri: item.image }}
+                    style={styles.messageImage}
+                    resizeMode="cover"
+                  />
+                )}
+              </View>
+            ) : null}
+
+            {/* Timestamp - positioned at bottom */}
+            <Text style={[
+              styles.timestamp,
+              isMyMessage && styles.myTimestamp,
+              item.isDeleted && styles.deletedTimestamp
+            ]}>
+              {new Date(item.time).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+
+            {/* Options hint */}
+            {isMyMessage && !item.isSystem && !item.isDeleted && (
               <Text style={styles.optionsHint}>Long press for options</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+            )}
+          </View>
+        </View>
 
-        {/* User Avatar for my messages (on the right) */}
+        {/* Avatar for my messages */}
         {isMyMessage && !item.isSystem && !item.isDeleted && (
-          <View style={styles.userAvatarContainer}>
+          <View style={styles.avatarWrapper}>
             <Image
               source={getUserImageSource(userImage)}
-              style={styles.userAvatar}
+              style={styles.avatar}
             />
           </View>
         )}
-      </Animated.View>
+      </View>
     );
   };
   if (!hasCheckedStance) {
@@ -2367,9 +2358,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   msgContainer: {
-    marginVertical: 8,
+    marginVertical: 4,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
   },
   myMsgContainer: {
     justifyContent: 'flex-end',
@@ -2377,8 +2368,8 @@ const styles = StyleSheet.create({
   userAvatarContainer: {
     width: 32,
     height: 32,
-    marginHorizontal: 8,
-    marginBottom: 4,
+    marginHorizontal: 4,
+//     marginBottom: 4,
   },
   userAvatar: {
     width: 32,
@@ -2388,7 +2379,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   msgBox: {
-    padding: 16,
+    padding: 12,
     borderRadius: 20,
     maxWidth: '70%',
     shadowColor: '#000',
@@ -2457,8 +2448,16 @@ const styles = StyleSheet.create({
   },
   msgText: {
     fontSize: 16,
-    color: '#1e293b',
-    lineHeight: 22,
+      color: '#1e293b',
+      lineHeight: 22,
+      // Add these:
+      includeFontPadding: false, // Remove extra padding around text
+      textAlignVertical: 'center', // Center text vertically
+      // For iOS:
+      paddingVertical: 0,
+      // For better line break handling:
+      flexShrink: 1,
+      marginVertical:0
   },
   myMsgText: {
     color: '#fff',
@@ -2915,4 +2914,208 @@ const styles = StyleSheet.create({
         color: '#64748b',
         fontSize: 14,
       },
+
+  messageRow: {
+      flexDirection: 'row',
+      marginVertical: 2, // Reduced from 4
+      paddingHorizontal: 8, // Reduced from 12
+    },
+    myMessageRow: {
+      justifyContent: 'flex-end',
+    },
+    theirMessageRow: {
+      justifyContent: 'flex-start',
+    },
+
+    // Avatar wrapper
+    avatarWrapper: {
+      width: 32,
+      justifyContent: 'flex-end', // Align avatar to bottom
+      marginBottom: 4,
+    },
+    avatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 2,
+      borderColor: '#e2e8f0',
+    },
+
+    // Bubble wrapper
+    bubbleWrapper: {
+      maxWidth: '75%', // Reduced from 80%
+    },
+    myBubbleWrapper: {
+      alignItems: 'flex-end',
+    },
+
+    // Message bubble - CRITICAL FIXES HERE
+    messageBubble: {
+      padding: 10, // Reduced from 12
+      borderRadius: 18,
+      minWidth: 50,
+      maxWidth: '100%',
+      padding: 10,
+        borderRadius: 18,
+        backgroundColor: 'red',
+      // Remove these to eliminate extra space:
+      // shadowColor: '#000',
+      // shadowOffset: { width: 0, height: 2 },
+      // shadowOpacity: 0.1,
+      // shadowRadius: 8,
+      elevation: 2, // Reduced from 3
+    },
+    myBubble: {
+      backgroundColor: '#667eea',
+      borderBottomRightRadius: 4,
+    },
+    theirBubble: {
+      backgroundColor: '#fff',
+      borderBottomLeftRadius: 4,
+      borderWidth: 1,
+      borderColor: '#f1f5f9',
+    },
+    deletedBubble: {
+      backgroundColor: '#f1f5f9',
+      opacity: 0.7,
+      padding: 8, // Even smaller for deleted messages
+    },
+
+    // User info - compact
+    userInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 4, // Reduced from 6-8
+      flexWrap: 'wrap',
+    },
+    username: {
+      fontSize: 13, // Reduced from 14
+      fontWeight: '600',
+      marginRight: 6,
+    },
+    stanceTag: {
+      paddingHorizontal: 6, // Reduced
+      paddingVertical: 2, // Reduced
+      borderRadius: 10,
+    },
+    stanceTagText: {
+      fontSize: 11, // Reduced
+      fontWeight: '600',
+    },
+
+    // My stance indicator - compact
+    myStance: {
+      marginBottom: 4,
+    },
+    myStanceText: {
+      fontSize: 11,
+      fontWeight: '600',
+      fontStyle: 'italic',
+    },
+
+    // AI tag - compact
+    aiTag: {
+      backgroundColor: '#fef2f2',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 10,
+      alignSelf: 'flex-start',
+      marginBottom: 4,
+    },
+    aiTagText: {
+      color: '#dc2626',
+      fontSize: 10,
+      fontWeight: '600',
+    },
+
+    // Score badge - smaller
+    scoreBadge: {
+      position: 'absolute',
+      top: -6,
+      right: -6,
+      borderRadius: 10,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      minWidth: 40,
+      zIndex: 1,
+    },
+    scoreBadgeText: {
+      color: 'white',
+      fontSize: 10,
+      fontWeight: 'bold',
+    },
+
+    // Content wrapper - ELIMINATE EXTRA SPACE
+    contentWrapper: {
+      // CRITICAL: Remove all margins/padding that cause space
+      margin: 0,
+      padding: 0,
+    },
+
+    // Message text - fix line height
+    messageText: {
+      fontSize: 15,
+      color: '#1e293b',
+      lineHeight: 20, // Reduced from 22
+      includeFontPadding: false,
+      paddingVertical: 0,
+      marginVertical: 0,
+      // Important: Remove textAlignVertical
+    },
+    myMessageText: {
+      color: '#fff',
+    },
+    systemText: {
+      color: '#64748b',
+      fontStyle: 'italic',
+      fontSize: 13,
+      textAlign: 'center',
+    },
+
+    // Message image
+    messageImage: {
+      width: 180, // Reduced
+      height: 135, // Reduced
+      borderRadius: 10,
+      marginTop: 6,
+    },
+
+    // Timestamp - positioned correctly
+    timestamp: {
+      fontSize: 10, // Reduced
+      color: 'rgba(100, 116, 139, 0.7)',
+      alignSelf: 'flex-end',
+      marginTop: 4, // Small margin only
+      marginBottom: 0, // No bottom margin
+    },
+    myTimestamp: {
+      color: 'rgba(255,255,255,0.7)',
+    },
+    deletedTimestamp: {
+      color: '#94a3b8',
+    },
+
+    // Options hint - smaller
+    optionsHint: {
+      fontSize: 9,
+      color: 'rgba(255,255,255,0.5)',
+      fontStyle: 'italic',
+      marginTop: 2,
+    },
+
+    // Deleted wrapper
+    deletedWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 2, // Minimal padding
+    },
+    deletedIcon: {
+      fontSize: 12,
+      marginRight: 6,
+    },
+    deletedText: {
+      fontSize: 13,
+      color: '#94a3b8',
+      fontStyle: 'italic',
+    },
 });
