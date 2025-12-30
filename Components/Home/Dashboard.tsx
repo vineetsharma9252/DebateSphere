@@ -99,31 +99,31 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
-     const fetchDebateStats = async () => {
-        try {
-          // Fetch all rooms to calculate stats
-          const response = await axios.get(BACKEND_URL);
-          const allRooms = response.data;
-
-          // Calculate statistics based on new server data
-          const totalDebates = allRooms.length;
-          const activeDebates = allRooms.filter(room =>
-            room.isActive === true && room.debateStatus !== 'ended'
-          ).length;
-
-          // For participant count, you might need a different endpoint
-          // This is a placeholder - update with actual endpoint when available
-          const totalParticipants = activeDebates * 12; // Placeholder calculation
-
-          setDebateStats({
-            totalDebates,
-            activeDebates,
-            totalParticipants
-          });
-        } catch (error) {
-          console.error('Error fetching debate stats:', error);
-        }
-      };
+//      const fetchDebateStats = async () => {
+//         try {
+//           // Fetch all rooms to calculate stats
+//           const response = await axios.get(BACKEND_URL);
+//           const allRooms = response.data;
+//
+//           // Calculate statistics based on new server data
+//           const totalDebates = allRooms.length;
+//           const activeDebates = allRooms.filter(room =>
+//             room.isActive === true && room.debateStatus !== 'ended'
+//           ).length;
+//
+//           // For participant count, you might need a different endpoint
+//           // This is a placeholder - update with actual endpoint when available
+//           const totalParticipants = activeDebates * 12; // Placeholder calculation
+//
+//           setDebateStats({
+//             totalDebates,
+//             activeDebates,
+//             totalParticipants
+//           });
+//         } catch (error) {
+//           console.error('Error fetching debate stats:', error);
+//         }
+//       };
   const handleTopicPress = (topic) => {
     navigation.navigate('DebatePage', {
       topic: topic.name,

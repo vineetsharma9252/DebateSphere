@@ -1700,14 +1700,6 @@ async function determineWinner(roomId) {
 
 app.post("/evaluate", async (req, res) => {
     const { argument, team, roomId, userId, username, messageId } = req.body;
-
-    if (argument) {
-            argument = argument
-                .replace(/\n\s*\n\s*\n/g, '\n\n')
-                .replace(/^\s+|\s+$/g, '')
-                .replace(/\s+$/gm, '');
-        }
-
     // Validate input
     if (!argument || argument.trim().length < 10) {
         return res.json({
