@@ -1720,11 +1720,16 @@ async function getScoreboardData(roomId) {
       userStats[userId].argumentCount += 1;
     });
 
-    const leaderboard = Object.values(userStats).map(player => ({
-      ...player,
-      averageScore: player.argumentCount > 0 ?
-        player.totalScore / player.argumentCount : 0
-    })).sort((a, b) => b.averageScore - a.averageScore);
+    const leaderboard = Object.values(userStats).map(player => {
+          const averageScore = player.argumentCount > 0
+            ? player.totalScore / player.argumentCount
+            : 0;
+
+          return {
+            ...player,
+            averageScore: parseFloat(averageScore.toFixed(2))
+          };
+        }).sort((a, b) => b.averageScore - a.averageScore);
 
     return {
       standings: await getCurrentStandings(roomId),
@@ -1853,23 +1858,24 @@ Return ONLY valid JSON with this structure:
 
         // Update team scores
         await updateTeamScore(roomId, team, evaluation.totalScore, userId);
-            const existingStance = await UserStance.findOne({ roomId, userId });
-            if (!existingStance) {
-                await UserStance.findOneAndUpdate(
-                    { roomId, userId },
-                    {
-                        roomId,
-                        userId,
-                        username,
-                        stance: team.toLowerCase(),
-                        stanceLabel: team.toLowerCase() === 'favor' ? 'In Favor' :
-                                   team.toLowerCase() === 'against' ? 'Against' : 'Neutral',
-                        userImage: '',
-                        selectedAt: new Date()
-                    },
-                    { upsert: true, new: true }
-                );
-            }
+        const updatedScoreboard = await getScoreboardData(roomId);
+        const existingStance = await UserStance.findOne({ roomId, userId });
+        if (!existingStance) {
+            await UserStance.findOneAndUpdate(
+                { roomId, userId },
+                {
+                    roomId,
+                    userId,
+                    username,
+                    stance: team.toLowerCase(),
+                    stanceLabel: team.toLowerCase() === 'favor' ? 'In Favor' :
+                    team.toLowerCase() === 'against' ? 'Against' : 'Neutral',
+                    userImage: '',
+                    selectedAt: new Date()
+                },
+                { upsert: true, new: true }
+            );
+        }
         // Broadcast to room
         if (io) {
             io.to(roomId).emit('argument_evaluated', {
@@ -1880,6 +1886,21 @@ Return ONLY valid JSON with this structure:
                 totalScore: evaluation.totalScore,
                 evaluationId: argumentEval._id,
                 messageId
+            });
+
+            io.to(roomId).emit('scoreboard_updated', {
+              roomId,
+              standings: await getCurrentStandings(roomId),
+              leaderboard: updatedScoreboard.leaderboard,
+              winner: updatedScoreboard.winner,
+              updatedAt: new Date().toISOString()
+            });
+
+            // Also emit the simple score update
+            io.to(roomId).emit('score_updated', {
+              roomId,
+              teamScores: await getCurrentStandings(roomId),
+              lastUpdate: new Date().toISOString()
             });
         }
 

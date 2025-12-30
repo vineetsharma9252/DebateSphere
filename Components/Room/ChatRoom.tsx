@@ -645,7 +645,9 @@ useEffect(() => {
     if (data.roomId === roomId) {
       setWinner(data.winner);
       setDebateEnded(true);
+      fetchScoreboard()
       showWinnerModal(data);
+
     }
   };
 
@@ -662,14 +664,18 @@ useEffect(() => {
   socket.on('debate_ended', handleDebateEnded);
   socket.on('argument_evaluated', handleArgumentEvaluated);
   socket.on('scoreboard_updated', handleScoreboardUpdate);
+  socket.on('debate_settings_updated',()=>{
+      fetchScoreboard() ;
+      });
 
   return () => {
     socket.off('score_updated', handleScoreUpdated);
     socket.off('debate_ended', handleDebateEnded);
     socket.off('argument_evaluated', handleArgumentEvaluated);
     socket.off('scoreboard_updated', handleScoreboardUpdate);
+    socket.off('debate_settings_updated');
   };
-}, [roomId, userId]);
+}, [roomId, userId,  fetchScoreboard]);
 
 // Update handleMessage function
 const handleMessage = async () => {
@@ -1598,7 +1604,6 @@ const endDebate = async () => {
           >
             <View style={scoreboardStyles.loadingOverlay}>
               <ActivityIndicator size="large" color="#667eea" />
-              <Text style={scoreboardStyles.loadingText}>Loading scoreboard...</Text>
             </View>
           </Modal>
         );
@@ -1611,16 +1616,22 @@ const endDebate = async () => {
         visible={visible}
         onRequestClose={onClose}
       >
-        {loadingScoreboard && (
-          <View style={scoreboardStyles.loadingContainer}>
-            <ActivityIndicator size="large" color="#667eea" />
-            <Text style={scoreboardStyles.loadingText}>Loading scoreboard...</Text>
-          </View>
-        )}
+
         <View style={scoreboardStyles.modalOverlay}>
           <View style={scoreboardStyles.modalContent}>
             <View style={scoreboardStyles.header}>
               <Text style={scoreboardStyles.title}>🏆 Debate Scoreboard</Text>
+              <TouchableOpacity
+                style={scoreboardStyles.refreshButton}
+                onPress={fetchScoreboard}
+                disabled={loadingScoreboard}
+              >
+                {loadingScoreboard ? (
+                  <ActivityIndicator size="small" color="#667eea" />
+                ) : (
+                  <Text style={scoreboardStyles.refreshButtonText}>🔄</Text>
+                )}
+              </TouchableOpacity>
               <TouchableOpacity onPress={onClose} style={scoreboardStyles.closeButton}>
                 <Text style={scoreboardStyles.closeButtonText}>✕</Text>
               </TouchableOpacity>
@@ -3169,4 +3180,18 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 16,
       },
+  refreshButton: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  refreshButtonText: {
+    color: '#64748b',
+    fontSize: 14,
+    fontWeight: '500',
+  },
 });
