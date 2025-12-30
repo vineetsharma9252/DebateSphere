@@ -622,6 +622,19 @@ useEffect(() => {
 
   const socket = socketRef.current;
 
+  const handleScoreboardUpdate = (data) => {
+      if (data.roomId === roomId && data.leaderboard) {
+        console.log('Scoreboard updated via socket:', data);
+        setLeaderboard(data.leaderboard);
+        if (data.standings) {
+          setDebateScores(data.standings);
+        }
+        if (data.winner) {
+          setWinner(data.winner);
+        }
+      }
+  };
+
   const handleScoreUpdated = (data) => {
     if (data.roomId === roomId) {
       setDebateScores(data.teamScores);
@@ -648,11 +661,13 @@ useEffect(() => {
   socket.on('score_updated', handleScoreUpdated);
   socket.on('debate_ended', handleDebateEnded);
   socket.on('argument_evaluated', handleArgumentEvaluated);
+  socket.on('scoreboard_updated', handleScoreboardUpdate);
 
   return () => {
     socket.off('score_updated', handleScoreUpdated);
     socket.off('debate_ended', handleDebateEnded);
     socket.off('argument_evaluated', handleArgumentEvaluated);
+    socket.off('scoreboard_updated', handleScoreboardUpdate);
   };
 }, [roomId, userId]);
 
@@ -664,18 +679,18 @@ const handleMessage = async () => {
   }
 
   const cleanedText = text
-        .replace(/\n\s*\n\s*\n/g, '\n\n') // Replace 3+ line breaks with 2
-        .replace(/^\s+|\s+$/g, '') // Trim start/end whitespace
-        .replace(/\s+$/gm, ''); // Trim trailing whitespace from each line
+        .replace(/\n\s*\n\s*\n/g, '\n\n')
+        .replace(/^\s+|\s+$/g, '')
+        .replace(/\s+$/gm, '');
 
   if (!cleanedText.trim()) {
-        Alert.alert('Error', 'Message cannot be empty');
-        return;
+    Alert.alert('Error', 'Message cannot be empty');
+    return;
   }
-  // First, send the message to chat
+
   const messageData = {
     text: cleanedText,
-    image : user?.user_image || '',
+    image: user?.user_image || '',
     sender: username,
     userId: userId,
     userImage: user?.user_image || '',
@@ -692,11 +707,11 @@ const handleMessage = async () => {
       try {
         const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
           argument: cleanedText,
-          team: userStance.id.ToLowerCase() || userStance,
+          team: (userStance.id || userStance).toLowerCase(),
           roomId: roomId,
           userId: userId,
           username: username,
-          messageId: ack.id // Link evaluation to message
+          messageId: ack.id
         });
 
         if (evalResponse.data.success) {
@@ -704,6 +719,9 @@ const handleMessage = async () => {
 
           // Update local scores
           setDebateScores(currentStandings);
+
+          // REFRESH LEADERBOARD AFTER EVALUATION
+          fetchScoreboard();
 
           // Show evaluation to user
           Alert.alert(
@@ -733,6 +751,8 @@ const handleMessage = async () => {
           if (winner && winner.winner !== 'undecided') {
             setWinner(winner.winner);
             setDebateEnded(true);
+            // Refresh leaderboard when debate ends
+            fetchScoreboard();
           }
         }
       } catch (error) {
@@ -806,17 +826,24 @@ const fetchScoreboard = useCallback(async () => {
     console.log("Room ID for fetching scoreboard:", roomId);
     const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
 
+    console.log("Scoreboard response:", response.data); // Debug log
+
     if (response.data.success) {
+      // Make sure to set the leaderboard even if empty array
       setLeaderboard(response.data.leaderboard || []);
+
       if (response.data.standings) {
         setDebateScores(response.data.standings);
       }
-      if (response.data.winner) {
+
+      if (response.data.winner && response.data.winner !== 'undecided') {
         setWinner(response.data.winner);
       }
     }
   } catch (error) {
     console.error('Error fetching scoreboard:', error);
+    // Set empty arrays on error to prevent undefined
+    setLeaderboard([]);
   } finally {
     setLoadingScoreboard(false);
   }
@@ -983,6 +1010,8 @@ const endDebate = async () => {
 
       // Check user stance after connection
       checkUserStance();
+
+      fetchScoreboard();
     });
 
     socketRef.current.on('disconnect', (reason) => {
@@ -1558,6 +1587,22 @@ const endDebate = async () => {
 
   const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId }) => {
     const [activeTab, setActiveTab] = useState('scores');
+
+    if (loadingScoreboard) {
+        return (
+          <Modal
+            animationType="slide"
+            transparent={true}
+            visible={visible}
+            onRequestClose={onClose}
+          >
+            <View style={scoreboardStyles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#667eea" />
+              <Text style={scoreboardStyles.loadingText}>Loading scoreboard...</Text>
+            </View>
+          </Modal>
+        );
+      }
 
     return (
       <Modal
@@ -3112,4 +3157,16 @@ const styles = StyleSheet.create({
       color: '#94a3b8',
       fontStyle: 'italic',
     },
+
+    loadingOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      loadingText: {
+        marginTop: 12,
+        color: 'white',
+        fontSize: 16,
+      },
 });

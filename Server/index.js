@@ -1697,6 +1697,45 @@ async function determineWinner(roomId) {
   };
 }
 
+async function getScoreboardData(roomId) {
+  try {
+    const debateResult = await DebateResult.findOne({ roomId });
+    const arguments = await ArgumentEvaluation.find({ roomId });
+
+    // Calculate leaderboard
+    const userStats = {};
+
+    arguments.forEach(arg => {
+      const userId = arg.userId;
+      if (!userStats[userId]) {
+        userStats[userId] = {
+          userId,
+          username: arg.username,
+          team: arg.team,
+          totalScore: 0,
+          argumentCount: 0,
+        };
+      }
+      userStats[userId].totalScore += arg.totalScore;
+      userStats[userId].argumentCount += 1;
+    });
+
+    const leaderboard = Object.values(userStats).map(player => ({
+      ...player,
+      averageScore: player.argumentCount > 0 ?
+        player.totalScore / player.argumentCount : 0
+    })).sort((a, b) => b.averageScore - a.averageScore);
+
+    return {
+      standings: await getCurrentStandings(roomId),
+      leaderboard,
+      winner: debateResult?.winningTeam || 'undecided'
+    };
+  } catch (error) {
+    console.error('Error getting scoreboard data:', error);
+    return { standings: {}, leaderboard: [], winner: 'undecided' };
+  }
+}
 
 app.post("/evaluate", async (req, res) => {
     const { argument, team, roomId, userId, username, messageId } = req.body;
@@ -1770,6 +1809,16 @@ Return ONLY valid JSON with this structure:
             if (!hasAllFields) {
                 throw new Error("AI response missing required fields");
             }
+
+            const updatedScoreboard = await getScoreboardData(roomId);
+
+                // Broadcast updated scoreboard to all clients in the room
+                io.to(roomId).emit('scoreboard_updated', {
+                  roomId,
+                  standings: await getCurrentStandings(roomId),
+                  leaderboard: updatedScoreboard.leaderboard,
+                  winner: updatedScoreboard.winner
+                });
 
         } catch (parseError) {
             console.error("Failed to parse AI response:", parseError);
@@ -1913,6 +1962,8 @@ Return ONLY valid JSON with this structure:
             isFallback: true
         });
     }
+
+
 });
 
 // Helper function to create fallback from malformed AI response
