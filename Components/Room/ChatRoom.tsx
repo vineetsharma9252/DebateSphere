@@ -1404,7 +1404,7 @@ const endDebate = async () => {
     const messageText = item.text || '';
 
     // If text is empty and no image, don't render content
-    const hasContent = messageText.trim().length > 0 || item.image;
+    const hasContent = messageText.trim().length > 0;
 
     return (
       <View style={[
@@ -1510,13 +1510,7 @@ const endDebate = async () => {
                     {messageText}
                   </Text>
                 )}
-                {item.image && (
-                  <Image
-                    source={{ uri: item.image }}
-                    style={styles.messageImage}
-                    resizeMode="cover"
-                  />
-                )}
+
               </View>
             ) : null}
 

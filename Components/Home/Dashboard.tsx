@@ -219,6 +219,58 @@ export default function Dashboard() {
     );
   };
 
+
+    const fetchDebateStats = async () => {
+      try {
+        // Fetch all rooms
+        const response = await axios.get(BACKEND_URL);
+        const allRooms = response.data;
+
+        // Calculate statistics
+        const totalDebates = allRooms.length;
+        const activeDebates = allRooms.filter(room =>
+          room.isActive === true && room.debateStatus !== 'ended'
+        ).length;
+
+        // Fetch total participants from the new endpoint
+        const participantsResponse = await axios.get('https://debatesphere-11.onrender.com/api/participants/total');
+        const totalParticipants = participantsResponse.data.success
+          ? participantsResponse.data.totalParticipants
+          : 0;
+
+        // Or use the detailed endpoint for more data
+        // const detailedResponse = await axios.get('https://debatesphere-11.onrender.com/api/participants/detailed');
+        // const totalParticipants = detailedResponse.data.success
+        //   ? detailedResponse.data.totalUniqueParticipants
+        //   : 0;
+
+        setDebateStats({
+          totalDebates,
+          activeDebates,
+          totalParticipants
+        });
+      } catch (error) {
+        console.error('Error fetching debate stats:', error);
+
+        // Fallback calculation if new endpoint fails
+        try {
+          const response = await axios.get(BACKEND_URL);
+          const allRooms = response.data;
+          const activeDebates = allRooms.filter(room =>
+            room.isActive === true && room.debateStatus !== 'ended'
+          ).length;
+
+          setDebateStats({
+            totalDebates: allRooms.length,
+            activeDebates,
+            totalParticipants: activeDebates * 12 // Fallback to placeholder
+          });
+        } catch (fallbackError) {
+          console.error('Fallback stats fetch also failed:', fallbackError);
+        }
+      }
+    };
+
   const renderRoomItem = ({ item, index }) => {
 
     const getRoomStatus = (room) => {

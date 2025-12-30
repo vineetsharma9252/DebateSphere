@@ -1072,6 +1072,111 @@ app.put('/api/rooms/:roomId', async (req, res) => {
   }
 });
 
+
+// Add this endpoint to your server.js file after other API routes
+
+app.get('/api/participants/total', async (req, res) => {
+  try {
+    // Get all active rooms
+    const activeRooms = await Room.find({
+      isActive: true,
+      debateStatus: { $ne: 'ended' }
+    });
+
+    // Get all user stances for active rooms
+    const roomIds = activeRooms.map(room => room.roomId);
+
+    // Get unique participants from UserStance collection
+    const totalParticipants = await UserStance.aggregate([
+      {
+        $match: {
+          roomId: { $in: roomIds }
+        }
+      },
+      {
+        $group: {
+          _id: "$userId",
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalUniqueParticipants: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const result = totalParticipants.length > 0
+      ? totalParticipants[0].totalUniqueParticipants
+      : 0;
+
+    res.json({
+      success: true,
+      totalParticipants: result,
+      totalActiveRooms: activeRooms.length
+    });
+  } catch (error) {
+    console.error('Error fetching total participants:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch participants data'
+    });
+  }
+});
+
+// Alternative: Get participants count with more details
+app.get('/api/participants/detailed', async (req, res) => {
+  try {
+    // Get all active rooms
+    const activeRooms = await Room.find({
+      isActive: true,
+      debateStatus: { $ne: 'ended' }
+    });
+
+    const roomIds = activeRooms.map(room => room.roomId);
+
+    // Get participants per room
+    const participantsPerRoom = await UserStance.aggregate([
+      {
+        $match: {
+          roomId: { $in: roomIds }
+        }
+      },
+      {
+        $group: {
+          _id: "$roomId",
+          participantCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get unique participants across all rooms
+    const uniqueParticipants = await UserStance.distinct("userId", {
+      roomId: { $in: roomIds }
+    });
+
+    res.json({
+      success: true,
+      totalUniqueParticipants: uniqueParticipants.length,
+      totalActiveRooms: activeRooms.length,
+      participantsPerRoom: participantsPerRoom,
+      summary: {
+        averageParticipantsPerRoom: activeRooms.length > 0
+          ? (uniqueParticipants.length / activeRooms.length).toFixed(2)
+          : 0,
+        roomsWithParticipants: participantsPerRoom.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching detailed participants:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Delete room (soft delete)
 app.delete('/api/rooms/:roomId', async (req, res) => {
   try {
