@@ -769,12 +769,20 @@ const endDebate = async () => {
         style: 'destructive',
         onPress: async () => {
           try {
+
+            console.log(`🎯 Ending debate for room ${roomId} by user ${userId}`);
             const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
-              userId: userId
+              userId: userId,
+              reason: 'User requested end'
             });
 
             if (response.data.success) {
               Alert.alert('Success', 'Debate ended successfully');
+              fetchScoreboard();
+            }
+
+            else {
+            Alert.alert('Error',  response.data.error || 'Failed to end debate');
             }
           } catch (error) {
             Alert.alert('Error', error.response?.data?.error || 'Failed to end debate');

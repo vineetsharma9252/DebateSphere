@@ -534,13 +534,15 @@ socket.on("send_message", async (data, callback) => {
       }
 
       const roomId = `room_${uuidv4()}`;
-
+      const createdByUserId = mongoose.Types.ObjectId.isValid(createdBy)
+            ? new mongoose.Types.ObjectId(createdBy)
+            : createdBy;
       const newRoom = new Room({
         roomId,
         title: title.trim(),
         desc: desc?.trim() || '',
         topic: topic.trim(),
-        createdBy,
+        createdBy : createdByUserId,
         isActive: true,
         createdAt: new Date()
       });
@@ -2346,12 +2348,25 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
     const { roomId } = req.params;
     const { userId, reason } = req.body;
 
+    if (!userId) {
+          return res.status(400).json({
+            success: false,
+            error: 'User ID is required'
+          });
+     }
     // Verify permissions
     const room = await Room.findOne({ roomId });
     if (!room) {
       return res.status(404).json({ success: false, error: 'Room not found' });
     }
 
+    let isCreator = false;
+        if (room.createdBy) {
+          // Convert both to string for comparison
+          const creatorId = room.createdBy.toString ? room.createdBy.toString() : String(room.createdBy);
+          const requestUserId = String(userId);
+          isCreator = creatorId === requestUserId;
+    }
     // Check if user is room creator or has moderator rights
     const user = await User.findById(userId);
     const isCreator = room.createdBy.toString() === userId;

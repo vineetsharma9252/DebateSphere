@@ -20,7 +20,7 @@ const CreateRoom = ({ visible, onClose, onCreateRoom, username, userId }) => {
   });
   const [loading, setLoading] = useState(false);
   const [customTopic, setCustomTopic] = useState('');
-
+  console.log("User id while creating the room is " + userId);
   const topics = [
     'Politics', 'Technology', 'Environment', 'Sports',
     'Education', 'Health', 'Science', 'Philosophy',
