@@ -36,8 +36,13 @@ const messageSchema = new mongoose.Schema({
     userStance: String, // Add this field to store stance in messages
     stanceLabel: String, // Add this field for display
     evaluationId: String, // Link to ArgumentEvaluation
-    evaluationScore: Number // Quick reference score
-
+    evaluationScore: Number, // Quick reference score
+    messageId: {
+            type: String,
+            unique: true,
+            sparse: true
+    },
+    originalMessageId: String
 });
 
 const generateToken = (user) => {
@@ -376,6 +381,8 @@ socket.on("send_message", async (data, callback) => {
         }
 
     try {
+        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
         const messageData = {
             text: cleanedText,
             image: "", // Set image to userImage
@@ -388,7 +395,9 @@ socket.on("send_message", async (data, callback) => {
             aiDetected: data.aiDetected || false,
             aiConfidence: data.aiConfidence || 0,
             userStance: data.userStance?.id || data.userStance || "",
-            stanceLabel: data.userStance?.label || ""
+            stanceLabel: data.userStance?.label || "" ,
+            messageId: messageId, // Store the message ID
+            originalMessageId: data.messageId
         };
 
         console.log("Saving message with unified image/userImage:", {
@@ -401,6 +410,7 @@ socket.on("send_message", async (data, callback) => {
 
         const broadcastMessage = {
             id: savedMessage._id.toString(),
+            messageId : savedMessage.messageId,
             text: savedMessage.text,
             image: savedMessage.image, // Use image field
             sender: savedMessage.sender,
@@ -417,7 +427,7 @@ socket.on("send_message", async (data, callback) => {
 
         io.to(data.roomId).emit("receive_message", broadcastMessage);
 
-        if (callback) callback({ status: "ok", id: savedMessage._id });
+        if (callback) callback({ status: "ok", id: savedMessage._id , messageId : savedMessage.messageId});
     } catch (err) {
         console.error("Error saving message:", err);
         if (callback) callback({ status: "error", error: err.message });
@@ -1764,6 +1774,25 @@ app.post("/evaluate", async (req, res) => {
         username,
         messageId
       });
+      let actualMessageId = messageId;
+        if (!actualMessageId) {
+          try {
+            const recentMessage = await Message.findOne({
+              roomId,
+              userId,
+              isDeleted: false
+            }).sort({ time: -1 }).limit(1);
+
+        if (recentMessage) {
+              actualMessageId = recentMessage.messageId || recentMessage._id.toString();
+              console.log(`🔍 Found recent message for linking: ${actualMessageId}`);
+            }
+        } catch (error) {
+            console.error("Error finding recent message:", error);
+        }
+      }
+
+        console.log(`📌 Using messageId for evaluation: ${actualMessageId || 'Not found'}`);
 
     // Short, effective prompt
     const scoringPrompt = `You are a debate judge. Score this argument from 1-10 on:
@@ -1858,13 +1887,36 @@ Return ONLY valid JSON with this structure:
             },
             totalScore: evaluation.totalScore || 30,
             feedback: evaluation.feedback || "AI evaluation completed",
-            messageId,
+            messageId : actualMessageId,
             evaluatedAt: new Date(),
             aiConfidence: 0.9
         });
 
         await argumentEval.save();
 
+        if (actualMessageId) {
+            try {
+              // Try to find message by messageId first, then by _id
+              let messageToUpdate = await Message.findOne({
+                $or: [
+                  { messageId: actualMessageId },
+                  { _id: actualMessageId }
+                ]
+              });
+
+              if (messageToUpdate) {
+                console.log(`🔗 Linking evaluation to message: ${messageToUpdate._id}`);
+                await Message.findByIdAndUpdate(messageToUpdate._id, {
+                  evaluationId: argumentEval._id,
+                  evaluationScore: evaluation.totalScore
+                });
+              } else {
+                console.log(`⚠️ Message not found for ID: ${actualMessageId}`);
+              }
+            } catch (error) {
+              console.error("Error updating message with evaluation:", error);
+            }
+          }
         // Update team scores
         await updateTeamScore(roomId, team, evaluation.totalScore, userId);
         const updatedScoreboard = await getScoreboardData(roomId);
