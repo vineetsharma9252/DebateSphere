@@ -1756,6 +1756,14 @@ app.post("/evaluate", async (req, res) => {
             currentStandings: await getCurrentStandings(roomId)
         });
     }
+    console.log("📝 Evaluation request received:", {
+        argumentLength: argument?.length,
+        team,
+        roomId,
+        userId,
+        username,
+        messageId
+      });
 
     // Short, effective prompt
     const scoringPrompt = `You are a debate judge. Score this argument from 1-10 on:
@@ -1805,6 +1813,7 @@ Return ONLY valid JSON with this structure:
         let evaluation;
         try {
             evaluation = JSON.parse(resultText);
+            console.log("✅ Parsed AI evaluation:", evaluation);
 
             // Validate the response has all required fields
             const requiredFields = ['clarity', 'relevance', 'logic', 'evidence',
@@ -1876,6 +1885,8 @@ Return ONLY valid JSON with this structure:
                 { upsert: true, new: true }
             );
         }
+        const scoreboardData = await getScoreboardData(roomId);
+
         // Broadcast to room
         if (io) {
             io.to(roomId).emit('argument_evaluated', {
@@ -1933,12 +1944,14 @@ Return ONLY valid JSON with this structure:
         res.json({
             success: true,
             evaluation: evaluation,
-            currentStandings: await getCurrentStandings(roomId)
+            evaluationId: argumentEval._id,
+            currentStandings: currentStandings
         });
 
     } catch (error) {
         console.error("❌ Groq API Error:", {
             message: error.message,
+            stack : error.stack ,
             status: error.response?.status,
             data: error.response?.data
         });

@@ -694,6 +694,8 @@ const handleMessage = async () => {
     return;
   }
 
+
+  const tempMessageId =  `temp_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
   const messageData = {
     text: cleanedText,
     image: user?.user_image || '',
@@ -706,106 +708,7 @@ const handleMessage = async () => {
     stanceLabel: userStance.label || stanceLabels[userStance]
   };
 
-  // Emit message
-  socketRef.current.emit('send_message', messageData, async (ack) => {
-    if (ack && ack.status === "ok") {
-      // Then evaluate the argument
-      try {
-        const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-          argument: cleanedText,
-          team: (userStance.id || userStance).toLowerCase(),
-          roomId: roomId,
-          userId: userId,
-          username: username,
-          messageId: ack.id
-        });
-
-        if (evalResponse.data.success) {
-          const { evaluation, currentStandings, winner } = evalResponse.data;
-
-          // Update local scores
-          setDebateScores(currentStandings);
-
-          // REFRESH LEADERBOARD AFTER EVALUATION
-          fetchScoreboard();
-
-          // Show evaluation to user
-          Alert.alert(
-            '📊 Argument Evaluated!',
-            `Your argument scored: ${evaluation.totalScore}/60\n\n` +
-            `Clarity: ${evaluation.clarity}/10\n` +
-            `Relevance: ${evaluation.relevance}/10\n` +
-            `Logic: ${evaluation.logic}/10\n` +
-            `Evidence: ${evaluation.evidence}/10\n` +
-            `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
-            `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
-            `Feedback: ${evaluation.feedback}`,
-            [{ text: 'OK' }]
-          );
-
-          // Update message with evaluation score
-          const updatedMessageData = {
-            ...messageData,
-            evaluationId: evaluation.evaluationId,
-            evaluationScore: evaluation.totalScore
-          };
-
-          // Re-emit with evaluation data
-          socketRef.current.emit('update_message_evaluation', updatedMessageData);
-
-          // Check if debate ended
-          if (winner && winner.winner !== 'undecided') {
-            setWinner(winner.winner);
-            setDebateEnded(true);
-            // Refresh leaderboard when debate ends
-            fetchScoreboard();
-          }
-        }
-      } catch (error) {
-        console.error('Evaluation error:', error);
-        // Continue without evaluation
-      }
-
-      setText('');
-    }
-  });
 };
-
-//   const handleMessage = async () => {
-//       if (!text.trim() || !userStance) return;
-//
-//       try {
-//         const response = await axios.post(SERVER_URL + "/evaluate", {
-//           argument: text,
-//           team: userStance.id // or userStance, depending on your data structure
-//         });
-//
-//         if (response.data.success) {
-//           // Store the detailed evaluation result
-//           setMessageEvaluation(response.data.evaluation);
-//           console.log("Evaluation received:", response.data.evaluation);
-//
-//           // Prepare and send the chat message via socket
-//           const messageData = {
-//             text: text,
-//             sender: username,
-//             userId: userId,
-//             roomId: roomId,
-//             // Optionally, you can attach a summary of the score to the message
-//             evaluationScore: response.data.evaluation.totalScore
-//           };
-//           socketRef.current.emit('send_message', messageData);
-//         }
-//         setText(''); // Clear input
-//       } catch (error) {
-//         console.error("Evaluation error:", error);
-//         Alert.alert("Error", "Could not evaluate argument. Sending without evaluation.");
-//         // Fallback: send the message without an evaluation
-//         const messageData = { /* ... */ };
-//         socketRef.current.emit('send_message', messageData);
-//         setText('');
-//       }
-//     };
 
 
 const showWinnerModal = (winnerData) => {
@@ -1038,7 +941,7 @@ const endDebate = async () => {
 
     socketRef.current.on('receive_message', async (msg) => {
       console.log('Received message:', msg);
-
+        console.log("Evaluation started ....");
       const processMessage = async (message) => {
         const messageUserId = message.userId || message.senderId;
 
@@ -1234,8 +1137,74 @@ const endDebate = async () => {
 
     console.log('Sending message with stance:', userStance);
 
-    socketRef.current.emit('send_message', messageData, (ack) => {
+    socketRef.current.emit('send_message', messageData, async (ack) => {
       console.log('Server ACK:', ack);
+      if (ack && ack.status === "ok") {
+            // Then evaluate the argument
+
+            const actualMessageId = ack.id || tempMessageId;
+            try {
+
+                console.log("Evaluation Started ...") ;
+              const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
+                argument: cleanedText,
+                team: (userStance.id || userStance).toLowerCase(),
+                roomId: roomId,
+                userId: userId,
+                username: username,
+                messageId: actualMessageId
+              });
+
+              if (evalResponse.data.success) {
+                const { evaluation, currentStandings, winner } = evalResponse.data;
+
+                // Update local scores
+                if (currentStandings){
+                setDebateScores(currentStandings);
+                }
+
+                // REFRESH LEADERBOARD AFTER EVALUATION
+                fetchScoreboard();
+
+                // Show evaluation to user
+                Alert.alert(
+                  '📊 Argument Evaluated!',
+                  `Your argument scored: ${evaluation.totalScore}/60\n\n` +
+                  `Clarity: ${evaluation.clarity}/10\n` +
+                  `Relevance: ${evaluation.relevance}/10\n` +
+                  `Logic: ${evaluation.logic}/10\n` +
+                  `Evidence: ${evaluation.evidence}/10\n` +
+                  `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
+                  `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
+                  `Feedback: ${evaluation.feedback}`,
+                  [{ text: 'OK' }]
+                );
+
+                // Update message with evaluation score
+                const updatedMessageData = {
+                  ...messageData,
+                  evaluationId: evaluation.evaluationId,
+                  evaluationScore: evaluation.totalScore
+                };
+
+                // Re-emit with evaluation data
+                socketRef.current.emit('update_message_evaluation', updatedMessageData);
+
+                // Check if debate ended
+                if (winner && winner.winner !== 'undecided') {
+                  setWinner(winner.winner);
+                  setDebateEnded(true);
+                  // Refresh leaderboard when debate ends
+                  fetchScoreboard();
+                }
+              }
+            } catch (error) {
+              console.error('Evaluation error:', error);
+              // Continue without evaluation
+            }
+
+            setText('');
+          }
       if (ack && ack.error) {
         Alert.alert('Error', 'Failed to send message');
       } else if (isAIDetected) {
