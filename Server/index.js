@@ -2361,13 +2361,6 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Room not found' });
     }
 
-    let isCreator = false;
-        if (room.createdBy) {
-          // Convert both to string for comparison
-          const creatorId = room.createdBy.toString ? room.createdBy.toString() : String(room.createdBy);
-          const requestUserId = String(userId);
-          isCreator = creatorId === requestUserId;
-    }
     // Check if user is room creator or has moderator rights
     const user = await User.findById(userId);
     const isCreator = room.createdBy.toString() === userId;
