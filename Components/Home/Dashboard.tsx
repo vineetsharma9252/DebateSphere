@@ -281,7 +281,10 @@ export default function Dashboard() {
     };
 
     const roomStatus = getRoomStatus(item);
-
+    const participantCount = item.standings ?
+        (item.standings.favor?.participants || 0) +
+        (item.standings.against?.participants || 0) +
+        (item.standings.neutral?.participants || 0) : 12;
 
       return (
     <TouchableOpacity
@@ -314,16 +317,21 @@ export default function Dashboard() {
         {item.desc || 'Join this engaging debate conversation'}
       </Text>
 
+      {item.winner && item.winner !== 'undecided' && (
+              <View style={styles.winnerBadge}>
+                <Text style={styles.winnerText}>🏆 Winner: {item.winner}</Text>
+              </View>
+      )}
       <View style={styles.roomFooter}>
         <View style={styles.participants}>
-          <Text style={styles.participantsText}>👥 12 debating</Text>
+          <Text style={styles.participantsText}>👥 {participantCount}</Text>
         </View>
         <View style={[
           styles.joinButton,
-          !item.isActive && styles.joinButtonDisabled
+          (!item.isActive || item.debateStatus === 'ended') && styles.joinButtonDisabled
         ]}>
           <Text style={styles.joinButtonText}>
-            {item.isActive ? 'Join Debate' : 'Room Closed'}
+            {item.isActive || item.debateStatus === 'ended' ? 'Room Closed' : 'Join Debate'}
           </Text>
         </View>
       </View>
@@ -875,5 +883,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  winnerBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 12,
+    alignSelf: 'flex-start',
+  },
+  winnerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
   },
 });

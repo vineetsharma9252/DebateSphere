@@ -1878,6 +1878,40 @@ async function getScoreboardData(roomId) {
   }
 }
 
+
+app.get('/api/rooms/:roomId/full', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    // Get room data
+    const room = await Room.findOne({ roomId })
+      .populate('createdBy', 'username');
+
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    // Get debate results
+    const debateResult = await DebateResult.findOne({ roomId });
+    const scoreboardResponse = await getScoreboardData(roomId);
+
+    // Combine data
+    const combinedData = {
+      ...room.toObject(),
+      debateStatus: debateResult?.isActive ? 'active' : 'ended',
+      winner: debateResult?.winningTeam || room.winner,
+      standings: scoreboardResponse.standings,
+      participantCount: scoreboardResponse.totalArguments || 0
+    };
+
+    res.json(combinedData);
+  } catch (error) {
+    console.error('Error fetching full room data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 app.post("/evaluate", async (req, res) => {
     const { argument, team, roomId, userId, username, messageId } = req.body;
     // Validate input
