@@ -88,6 +88,27 @@ io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
   socket.on('join_room', async (roomId) => {
+
+
+    const room = await Room.findOne({ roomId }) ;
+
+    if (!room || !room.isActive){
+        socket.emit('room_closed', {
+            roomId,
+            message : 'This Debate room is not longer active'
+        });
+        return ;
+    }
+
+    const debateResult = await DebateResult.findOne({ roomId });
+        if (debateResult && !debateResult.isActive) {
+          socket.emit('room_closed', {
+            roomId,
+            message: 'This debate has ended',
+            winner: debateResult.winningTeam
+          });
+          return;
+    }
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
@@ -1911,6 +1932,31 @@ app.get('/api/rooms/:roomId/full', async (req, res) => {
   }
 });
 
+
+// Add this endpoint to your server.js
+app.get('/api/rooms/:roomId/status', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ success: false, error: 'Room not found' });
+    }
+
+    const debateResult = await DebateResult.findOne({ roomId });
+
+    res.json({
+      success: true,
+      isActive: room.isActive,
+      debateStatus: debateResult?.isActive ? 'active' : 'ended',
+      winner: debateResult?.winningTeam || room.winner,
+      canJoin: room.isActive && (debateResult?.isActive !== false)
+    });
+  } catch (error) {
+    console.error('Error checking room status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.post("/evaluate", async (req, res) => {
     const { argument, team, roomId, userId, username, messageId } = req.body;

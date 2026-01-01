@@ -555,6 +555,11 @@ export default function ChatRoom({ route }) {
     against: { total: 0, count: 0, average: 0, participants: 0 },
     neutral: { total: 0, count: 0, average: 0, participants: 0 }
   });
+  const [roomStatus, setRoomStatus] = useState({
+    isActive: true,
+    isEnded: false,
+    winner: null,
+  });
   const [winner, setWinner] = useState(null);
   const [showScoreboard, setShowScoreboard] = useState(false);
   const [debateEnded, setDebateEnded] = useState(false);
@@ -617,11 +622,58 @@ export default function ChatRoom({ route }) {
     return stanceData ? stanceData.light : '#f8fafc';
   };
 
+
+  const checkRoomStatus = async () => {
+    try {
+      const response = await axios.get(
+        `https://debatesphere-11.onrender.com/api/debate/${roomId}/scoreboard`
+      );
+
+      if (response.data.success) {
+        const { debateStatus, winner } = response.data;
+        const isEnded = debateStatus === 'ended';
+
+        setRoomStatus({
+          isActive: !isEnded,
+          isEnded,
+          winner
+        });
+
+        // If room is ended, show alert and optionally navigate back
+        if (isEnded) {
+          Alert.alert(
+            'Debate Ended',
+            `This debate has ended. Winner: ${winner !== 'undecided' ? winner : 'No clear winner'}`,
+            [
+              {
+                text: 'View Results',
+                onPress: () => {
+                  // Navigate to results page or show results
+                  navigation.navigate('DebateResults', { roomId });
+                }
+              },
+              {
+                text: 'Go Back',
+                onPress: () => navigation.goBack(),
+                style: 'cancel'
+              }
+            ]
+          );
+
+          // Disable message sending
+          setCanSendMessages(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking room status:', error);
+    }
+  };
+
 useEffect(() => {
   if (!socketRef.current) return;
 
   const socket = socketRef.current;
-
+  checkRoomStatus();
   const handleScoreboardUpdate = (data) => {
       if (data.roomId === roomId && data.leaderboard) {
         console.log('Scoreboard updated via socket:', data);
@@ -679,12 +731,23 @@ useEffect(() => {
       fetchScoreboard() ;
       });
 
+  socket.on('room_closed', (data) => {
+      Alert.alert(
+        'Room Closed',
+        data.message,
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    });
+
+
   return () => {
     socket.off('score_updated', handleScoreUpdated);
     socket.off('debate_ended', handleDebateEnded);
     socket.off('argument_evaluated', handleArgumentEvaluated);
     socket.off('scoreboard_updated', handleScoreboardUpdate);
     socket.off('debate_settings_updated');
+    socket.off('room_closed');
+
   };
 }, [roomId, userId,  fetchScoreboard]);
 

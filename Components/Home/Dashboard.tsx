@@ -286,17 +286,32 @@ export default function Dashboard() {
         (item.standings.against?.participants || 0) +
         (item.standings.neutral?.participants || 0) : 12;
 
+    const isRoomClosed = !item.isActive || item.debateStatus === 'ended';
+
       return (
     <TouchableOpacity
-      style={styles.roomItem}
-      onPress={() => navigation.navigate('ChatRoom', {
-        username: username,
-        roomId: item.roomId,
-        title: item.title,
-        desc: item.desc,
-      })}
-      activeOpacity={0.8}
-    >
+      style={[styles.roomItem, isRoomClosed && styles.roomItemDisabled]}
+      onPress={() => {
+              if (isRoomClosed) {
+                // Show alert for closed rooms
+                Alert.alert(
+                  'Room Closed',
+                  'This debate has ended and is no longer accessible.',
+                  [{ text: 'OK' }]
+                );
+              } else {
+                navigation.navigate('ChatRoom', {
+                  username: username,
+                  roomId: item.roomId,
+                  title: item.title,
+                  desc: item.desc,
+                });
+              }
+            }}
+            activeOpacity={isRoomClosed ? 1 : 0.8}
+            disabled={isRoomClosed}
+          >
+
       <View style={styles.roomHeader}>
         <View style={styles.roomIcon}>
           <Text style={styles.roomIconText}>💬</Text>
@@ -305,11 +320,20 @@ export default function Dashboard() {
           <Text style={styles.roomTitle} numberOfLines={1}>{item.title}</Text>
           <Text style={styles.roomTopic}>#{item.topic || 'General'}</Text>
         </View>
-        <View style={styles.activeIndicator}>
-          <View style={styles.activeDot} />
-          <Text style={styles.activeText}>
-            {item.isActive ? 'Live' : 'Inactive'}
-          </Text>
+        <View style={[
+                  styles.activeIndicator,
+                  isRoomClosed && styles.closedIndicator,
+                  { backgroundColor: `${roomStatus.color}20` }
+                ]}>
+          <View style={[styles.activeDot, { backgroundColor: roomStatus.color }]} />
+          <Text style={[
+                      styles.activeText,
+                      { color: isRoomClosed ? COLORS.textLight :
+                        roomStatus.color === COLORS.accent ? '#166534' : roomStatus.color }
+                    ]}>
+                      {roomStatus.status}
+                    </Text>
+
         </View>
       </View>
 
@@ -331,10 +355,17 @@ export default function Dashboard() {
           (!item.isActive || item.debateStatus === 'ended') && styles.joinButtonDisabled
         ]}>
           <Text style={styles.joinButtonText}>
-            {item.isActive || item.debateStatus === 'ended' ? 'Room Closed' : 'Join Debate'}
+            {item.isActive || item.debateStatus === 'ended' ? 'Join Debate' : 'Room Closed'}
           </Text>
         </View>
       </View>
+
+      {/* Show overlay for closed rooms */}
+            {isRoomClosed && (
+              <View style={styles.closedOverlay}>
+                <Text style={styles.closedText}>DEBATE ENDED</Text>
+              </View>
+            )}
     </TouchableOpacity>
   )};
 
@@ -896,5 +927,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#92400e',
+  },
+  roomItemDisabled: {
+    opacity: 0.7,
+  },
+  closedIndicator: {
+    backgroundColor: '#f1f5f9',
+  },
+  closedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+  },
+  closedText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 18,
+    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
 });
