@@ -642,12 +642,23 @@ useEffect(() => {
   };
 
   const handleDebateEnded = (data) => {
+
+    console.log('Debate ended data received:', data);
+
     if (data.roomId === roomId) {
       setWinner(data.winner);
       setDebateEnded(true);
+      if (data.stats) {
+          setDebateScores(data.stats);
+      }
       fetchScoreboard()
       showWinnerModal(data);
 
+      Alert.alert(
+            '🏆 Debate Concluded!',
+            `The debate has ended.\nWinner: ${data.winner.toUpperCase()}`,
+            [{ text: 'OK' }]
+      );
     }
   };
 
@@ -744,7 +755,9 @@ const fetchScoreboard = useCallback(async () => {
       if (response.data.standings) {
         setDebateScores(response.data.standings);
       }
-
+      if (response.data.debateStatus === 'ended') {
+          setDebateEnded(true);
+      }
       if (response.data.winner && response.data.winner !== 'undecided') {
         setWinner(response.data.winner);
       }
@@ -1419,6 +1432,12 @@ const endDebate = async () => {
     const hasContent = messageText.trim().length > 0;
 
     return (
+        <TouchableOpacity
+              activeOpacity={0.9}
+              onLongPress={() => handleMessageLongPress(item)}
+              delayLongPress={500} // 500ms delay for long press
+              disabled={item.isSystem || item.isDeleted} // Disable for system/deleted messages
+            >
       <View style={[
         styles.messageRow,
         isMyMessage ? styles.myMessageRow : styles.theirMessageRow
@@ -1555,6 +1574,7 @@ const endDebate = async () => {
           </View>
         )}
       </View>
+      </TouchableOpacity>
     );
   };
   if (!hasCheckedStance) {

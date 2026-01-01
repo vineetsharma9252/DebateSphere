@@ -1619,31 +1619,154 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
   }
 });
 
-// Helper function to update team scores
-// DELETE THIS DUPLICATE SECTION (lines 1109-1152):
-// Helper function to update team scores
-//async function updateTeamScore(roomId, team, score) {
-//  // Find or create debate result
-//  let debateResult = await DebateResult.findOne({ roomId });
-//
-//  if (!debateResult) {
-//    debateResult = new DebateResult({ roomId });
-//  }
-//
-//  // Update the specific team's score
-//  const teamKey = team.toLowerCase();
-//  if (debateResult.teamScores[teamKey]) {
-//    debateResult.teamScores[teamKey].totalPoints += score;
-//    debateResult.teamScores[teamKey].argumentCount += 1;
-//    debateResult.teamScores[teamKey].averageScore =
-//      debateResult.teamScores[teamKey].totalPoints /
-//      debateResult.teamScores[teamKey].argumentCount;
-//  }
-//
-//  debateResult.totalRounds += 1;
-//  await debateResult.save();
-//  return debateResult;
-//}
+
+async function determineWinnerWithForcedEnd(roomId) {
+  try {
+    const debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      // Create a default result if none exists
+      return {
+        winner: 'undecided',
+        margin: 0,
+        stats: {
+          favor: { total: 0, count: 0, average: 0, participants: 0 },
+          against: { total: 0, count: 0, average: 0, participants: 0 },
+          neutral: { total: 0, count: 0, average: 0, participants: 0 }
+        },
+        awards: null,
+        reason: 'No debate data available'
+      };
+    }
+
+    // Get all arguments for this room
+    const arguments = await ArgumentEvaluation.find({ roomId });
+
+    // Calculate basic stats
+    const stats = {
+      favor: { total: 0, count: 0, average: 0, participants: new Set() },
+      against: { total: 0, count: 0, average: 0, participants: new Set() },
+      neutral: { total: 0, count: 0, average: 0, participants: new Set() }
+    };
+
+    // Calculate total scores and counts
+    arguments.forEach(arg => {
+      const team = arg.team;
+      if (stats[team]) {
+        stats[team].total += arg.totalScore || 0;
+        stats[team].count += 1;
+        if (arg.userId) stats[team].participants.add(arg.userId);
+      }
+    });
+
+    // Calculate averages
+    Object.keys(stats).forEach(team => {
+      if (stats[team].count > 0) {
+        stats[team].average = stats[team].total / stats[team].count;
+      }
+      stats[team].participants = stats[team].participants.size;
+    });
+
+    // Determine winner based on average scores
+    const teams = Object.keys(stats).filter(team => stats[team].count > 0);
+
+    if (teams.length === 0) {
+      return {
+        winner: 'undecided',
+        margin: 0,
+        stats,
+        awards: null,
+        reason: 'No arguments submitted'
+      };
+    }
+
+    // Find team with highest average score
+    teams.sort((a, b) => stats[b].average - stats[a].average);
+    const winner = teams[0];
+    const runnerUp = teams[1];
+
+    // Calculate margin if there's a runner-up
+    let margin = 0;
+    if (runnerUp && stats[runnerUp].average > 0) {
+      margin = ((stats[winner].average - stats[runnerUp].average) / stats[runnerUp].average) * 100;
+    }
+
+    // Check if it's a tie (within 5% margin)
+    const isTie = runnerUp && margin < 5;
+
+    // Calculate awards
+    const awards = calculateAwardsFromArguments(arguments);
+
+    return {
+      winner: isTie ? 'tie' : winner,
+      margin: Math.round(margin * 100) / 100, // Round to 2 decimal places
+      stats: {
+        favor: {
+          total: stats.favor.total,
+          count: stats.favor.count,
+          average: Math.round(stats.favor.average * 100) / 100,
+          participants: stats.favor.participants
+        },
+        against: {
+          total: stats.against.total,
+          count: stats.against.count,
+          average: Math.round(stats.against.average * 100) / 100,
+          participants: stats.against.participants
+        },
+        neutral: {
+          total: stats.neutral.total,
+          count: stats.neutral.count,
+          average: Math.round(stats.neutral.average * 100) / 100,
+          participants: stats.neutral.participants
+        }
+      },
+      awards,
+      reason: isTie ? 'Close competition - considered a tie' : `${winner} team had higher average score`
+    };
+
+  } catch (error) {
+    console.error("Error in determineWinnerWithForcedEnd:", error);
+    return {
+      winner: 'undecided',
+      margin: 0,
+      stats: null,
+      awards: null,
+      reason: 'Error calculating winner'
+    };
+  }
+}
+
+function calculateAwardsFromArguments(arguments) {
+  if (arguments.length === 0) return null;
+
+  // Best Argument (highest total score)
+  const bestArgument = arguments.reduce((best, current) =>
+    (current.totalScore || 0) > (best.totalScore || 0) ? current : best
+  );
+
+  // Most Active (most arguments)
+  const argumentCounts = {};
+  arguments.forEach(arg => {
+    argumentCounts[arg.userId] = (argumentCounts[arg.userId] || 0) + 1;
+  });
+  const mostActiveUserId = Object.keys(argumentCounts).reduce((a, b) =>
+    argumentCounts[a] > argumentCounts[b] ? a : b
+  );
+  const mostActiveArg = arguments.find(arg => arg.userId === mostActiveUserId);
+
+  return {
+    bestArgument: bestArgument ? {
+      userId: bestArgument.userId,
+      username: bestArgument.username,
+      score: bestArgument.totalScore,
+      argumentExcerpt: bestArgument.argument?.substring(0, 150) + '...'
+    } : null,
+    mostActive: mostActiveArg ? {
+      userId: mostActiveArg.userId,
+      username: mostActiveArg.username,
+      argumentCount: argumentCounts[mostActiveUserId]
+    } : null
+  };
+}
 
 // Function to determine winner based on multiple criteria
 async function determineWinner(roomId) {
@@ -2343,7 +2466,7 @@ app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
 });
 
 // ADMIN: FORCE END DEBATE
-// ADMIN: FORCE END DEBATE
+
 app.post('/api/debate/:roomId/end', async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -2385,17 +2508,23 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
           maxArguments: 50,
           minArgumentsPerTeam: 3,
           winMarginThreshold: 10
+        },
+        teamScores: {
+                  favor: { totalPoints: 0, argumentCount: 0, averageScore: 0, participants: [] },
+                  against: { totalPoints: 0, argumentCount: 0, averageScore: 0, participants: [] },
+                  neutral: { totalPoints: 0, argumentCount: 0, averageScore: 0, participants: [] }
         }
       });
     }
 
     // Calculate winner
-    const winnerData = await determineWinner(roomId, true);
+    const winnerData = await determineWinnerWithForcedEnd(roomId, true);
 
-    if (!winnerData) {
+    if (!winnerData || !winnerData.winner) {
       return res.status(400).json({
         success: false,
-        error: 'Could not determine winner'
+        error: 'Could not determine winner',
+        debug : winnerData
       });
     }
 
@@ -2406,12 +2535,23 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
     debateResult.marginOfVictory = winnerData.margin;
     debateResult.calculatedAt = new Date();
 
+
+    if (winnerData.stats) {
+          Object.keys(winnerData.stats).forEach(team => {
+            if (debateResult.teamScores[team]) {
+              debateResult.teamScores[team].totalPoints = winnerData.stats[team].total || 0;
+              debateResult.teamScores[team].argumentCount = winnerData.stats[team].count || 0;
+              debateResult.teamScores[team].averageScore = winnerData.stats[team].average || 0;
+            }
+          });
+    }
     // Update awards
     if (winnerData.awards) {
       debateResult.awards = winnerData.awards;
     }
 
     await debateResult.save();
+    console.log('DebateResult saved:', debateResult);
 
     // Update room status
     room.debateStatus = 'ended';
@@ -2419,27 +2559,30 @@ app.post('/api/debate/:roomId/end', async (req, res) => {
     room.winner = winnerData.winner;
     await room.save();
 
-    // Broadcast to all connected users
-    io.to(roomId).emit('debate_ended', {
-      ...winnerData,
-      roomId,
-      endedBy: userId,
-      reason: reason || 'Manually ended',
-      endedAt: new Date().toISOString()
-    });
+    const responseData = {
+          success: true,
+          message: 'Debate ended successfully',
+          roomId,
+          winner: winnerData.winner,
+          margin: winnerData.margin,
+          stats: winnerData.stats,
+          awards: winnerData.awards,
+          endedAt: debateResult.endTime,
+          endedBy: userId,
+          reason: reason || 'Manually ended'
+    };
 
-    res.json({
-      success: true,
-      message: 'Debate ended successfully',
-      ...winnerData,
-      endedAt: debateResult.endTime
-    });
+    // Broadcast to all connected users
+    io.to(roomId).emit('debate_ended', responseData);
+
+    res.json(responseData);
 
   } catch (error) {
     console.error("Error ending debate:", error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message ,
+      stack: error.stack
     });
   }
 });

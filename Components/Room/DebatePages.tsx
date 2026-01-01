@@ -739,7 +739,7 @@ export default function DebatePage() {
         <Animated.FlatList
           data={rooms}
           renderItem={renderRoom}
-          keyExtractor={(item) => item.roomId || item._id}
+          keyExtractor={(item, index) => `${item.roomId || item._id}_${index}`}
           contentContainerStyle={styles.roomList}
           showsVerticalScrollIndicator={false}
           onRefresh={handleRefresh}
