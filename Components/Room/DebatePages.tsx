@@ -545,6 +545,14 @@ export default function DebatePage() {
                           new Date(item.endedAt).toLocaleDateString() :
                           'Recently';
 
+                       navigation.navigate('DebateResults', {
+                                       roomId: item.roomId,
+                                       winner: item.winner,
+                                       scores: item.standings || {},
+                                       title: item.title,
+                                       topic: item.topic
+                       });
+
                         Alert.alert(
                           'Debate Details',
                           `🏆 Winner: ${item.winner.toUpperCase()}\n\n` +

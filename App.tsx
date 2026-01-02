@@ -14,6 +14,7 @@ import Contact from './Components/Contact/Contact';
 import ChatRoom from './Components/Room/ChatRoom';
 import DebatePage from './Components/Room/DebatePages';
 import { UserProvider, useUser } from './Contexts/UserContext';
+import DebateResults from './Components/Room/DebateResults';
 import LoadingScreen from './Components/loading/LoadingScreen';
 
 // Create wrapper components directly
@@ -82,6 +83,14 @@ function AppNavigator() {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="DebateResults"
+            component={DebateResults}
+            options={{
+              title: 'Debate Results',
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
             name="Notification"
             component={NotificationWithNavbar}
             options={{ title: 'Notifications' }}
@@ -96,7 +105,7 @@ function AppNavigator() {
             component={DebatePageWrapper}
             options={({ route }) => ({
               title: `${route.params?.topic || 'Debates'} Debates`,
-              headerShown: true
+              headerShown: false
             })}
           />
           <Stack.Screen

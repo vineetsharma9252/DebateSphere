@@ -216,12 +216,17 @@ socket.on('end_debate', async (data, callback) => {
         return;
       }
 
-      // Broadcast results to all users in room
+
+      // In your end debate endpoint
       io.to(roomId).emit('debate_ended', {
         ...winnerData,
         roomId,
         endedBy: userId,
-        endedAt: new Date().toISOString()
+        endedAt: new Date().toISOString(),
+        // Include all necessary data
+        stats: await getCurrentStandings(roomId),
+        awards: debateResult.awards,
+        reason: 'Debate ended by user'
       });
 
       if (callback) {
@@ -1673,6 +1678,11 @@ async function determineWinnerWithForcedEnd(roomId) {
 
     const winningTeam = !isTie ? winner : null;
 
+    if (winningTeam && winningTeam !== 'undecided') {
+          // Update user stats for all participants
+          await updateUserStatsAfterDebate(roomId, winningTeam, userId);
+    }
+
     if (winningTeam) {
           // Update stats for users on the winning team
           const winners = userStances.filter(stance => stance.stance === winningTeam);
@@ -1784,6 +1794,58 @@ async function determineWinnerWithForcedEnd(roomId) {
       awards: null,
       reason: 'Error calculating winner'
     };
+  }
+}
+
+
+// Function to update user stats after debate ends
+async function updateUserStatsAfterDebate(roomId, winningTeam, userId) {
+  try {
+    // Get all user stances for this room
+    const userStances = await UserStance.find({ roomId });
+
+    // Get debate result for reference
+    const debateResult = await DebateResult.findOne({ roomId });
+
+    if (!userStances.length) return;
+
+    // Update stats for all participants
+    for (const stance of userStances) {
+      const isWinner = stance.stance === winningTeam;
+
+      try {
+        // Update total debates and wins
+        const user = await User.findOne({ username: stance.username });
+        if (user) {
+          user.total_debates = (user.total_debates || 0) + 1;
+
+          if (isWinner) {
+            user.debates_won = (user.debates_won || 0) + 1;
+          }
+
+          // Update rank based on win rate
+          if (user.total_debates > 0) {
+            const winRate = (user.debates_won / user.total_debates) * 100;
+            // Simple ranking logic - adjust as needed
+            if (winRate >= 80) user.rank = 1;
+            else if (winRate >= 60) user.rank = 2;
+            else if (winRate >= 40) user.rank = 3;
+            else if (winRate >= 20) user.rank = 4;
+            else user.rank = 5;
+          }
+
+          await user.save();
+          console.log(`✅ Updated stats for ${user.username}: ${user.debates_won}/${user.total_debates} wins`);
+        }
+      } catch (error) {
+        console.error(`❌ Error updating stats for ${stance.username}:`, error);
+      }
+    }
+
+    console.log(`🏆 Updated stats for ${userStances.length} participants`);
+
+  } catch (error) {
+    console.error('❌ Error updating user stats after debate:', error);
   }
 }
 

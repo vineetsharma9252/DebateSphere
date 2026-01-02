@@ -22,6 +22,7 @@ import { useUser } from "../../Contexts/UserContext";
 import { useRoute } from '@react-navigation/native';
 import AIDetectionService from '../services/AIDetectionService';
 import AIContentWarning from '../warning/AIContentWarning';
+import { useNavigation } from '@react-navigation/native';
 
 import axios from 'axios';
 
@@ -539,6 +540,7 @@ export default function ChatRoom({ route }) {
   const [aiWarningVisible, setAiWarningVisible] = useState(false);
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
+  const navigation = useNavigation();
   // Add this to your state
   const [loadingScoreboard, setLoadingScoreboard] = useState(false);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
@@ -623,6 +625,8 @@ export default function ChatRoom({ route }) {
   };
 
 
+
+
   const checkRoomStatus = async () => {
     try {
       const response = await axios.get(
@@ -669,86 +673,148 @@ export default function ChatRoom({ route }) {
     }
   };
 
+
+const handleDebateEnded = useCallback((data) => {
+    console.log('🏆 DEBATE ENDED EVENT RECEIVED:', data);
+
+    if (data.roomId === roomId) {
+      console.log('✅ This debate ended is for our room:', roomId);
+
+      setWinner(data.winner || 'undecided');
+      setDebateEnded(true);
+
+      if (data.stats) {
+        setDebateScores(data.stats);
+      }
+
+      // Refresh scoreboard to get final results
+      fetchScoreboard();
+
+      // Show winner modal
+      showWinnerModal(data);
+
+      // Alert user immediately
+      Alert.alert(
+        '🏆 Debate Concluded!',
+        `The debate has ended.\nWinner: ${(data.winner || 'undecided').toUpperCase()}`,
+        [
+          {
+            text: 'View Results',
+            onPress: () => {
+              navigation.navigate('DebateResults', {
+                roomId,
+                winner: data.winner || 'undecided',
+                scores: data.stats || debateScores,
+                leaderboard: leaderboard,
+                title: title,
+                desc: desc
+              });
+            }
+          },
+          {
+            text: 'OK',
+            onPress: () => {
+              // Optional: Auto-navigate after delay
+              setTimeout(() => {
+                navigation.navigate('DebateResults', {
+                  roomId,
+                  winner: data.winner || 'undecided',
+                  scores: data.stats || debateScores,
+                  leaderboard: leaderboard,
+                  title: title,
+                  desc: desc
+                });
+              }, 3000);
+            }
+          }
+        ]
+      );
+    }
+  }, [roomId, navigation, title, desc, debateScores, leaderboard, fetchScoreboard]);
+
+
 useEffect(() => {
   if (!socketRef.current) return;
 
   const socket = socketRef.current;
-  checkRoomStatus();
-  const handleScoreboardUpdate = (data) => {
-      if (data.roomId === roomId && data.leaderboard) {
-        console.log('Scoreboard updated via socket:', data);
-        setLeaderboard(data.leaderboard);
-        if (data.standings) {
-          setDebateScores(data.standings);
+  const setupSocketListeners = () => {
+      console.log('🔧 Setting up socket listeners for debate events');
+
+      socket.on('score_updated', (data) => {
+        console.log('📊 Score updated:', data);
+        if (data.roomId === roomId) {
+          setDebateScores(data.teamScores);
         }
-        if (data.winner) {
-          setWinner(data.winner);
-        }
-      }
-  };
-
-  const handleScoreUpdated = (data) => {
-    if (data.roomId === roomId) {
-      setDebateScores(data.teamScores);
-    }
-  };
-
-  const handleDebateEnded = (data) => {
-
-    console.log('Debate ended data received:', data);
-
-    if (data.roomId === roomId) {
-      setWinner(data.winner);
-      setDebateEnded(true);
-      if (data.stats) {
-          setDebateScores(data.stats);
-      }
-      fetchScoreboard()
-      showWinnerModal(data);
-
-      Alert.alert(
-            '🏆 Debate Concluded!',
-            `The debate has ended.\nWinner: ${data.winner.toUpperCase()}`,
-            [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const handleArgumentEvaluated = (data) => {
-    if (data.roomId === roomId && data.userId !== userId) {
-      ToastAndroid.show(
-        `${data.username}'s argument scored ${data.totalScore} points`,
-        ToastAndroid.SHORT
-      );
-    }
-  };
-
-  socket.on('score_updated', handleScoreUpdated);
-  socket.on('debate_ended', handleDebateEnded);
-  socket.on('argument_evaluated', handleArgumentEvaluated);
-  socket.on('scoreboard_updated', handleScoreboardUpdate);
-  socket.on('debate_settings_updated',()=>{
-      fetchScoreboard() ;
       });
 
-  socket.on('room_closed', (data) => {
-      Alert.alert(
-        'Room Closed',
-        data.message,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    });
+      socket.on('debate_ended', (data) => {
+        console.log('🏆 Debate ended event received:', data);
+        handleDebateEnded(data);
+      });
+
+      socket.on('argument_evaluated', (data) => {
+        console.log('📝 Argument evaluated:', data);
+        if (data.roomId === roomId && data.userId !== userId) {
+          if (Platform.OS === 'android') {
+            ToastAndroid.show(
+              `${data.username}'s argument scored ${data.totalScore} points`,
+              ToastAndroid.SHORT
+            );
+          } else {
+            // For iOS/web, use Alert or other notification
+            console.log(`${data.username}'s argument scored ${data.totalScore} points`);
+          }
+        }
+      });
+
+      socket.on('scoreboard_updated', (data) => {
+        console.log('📈 Scoreboard updated:', data);
+        if (data.roomId === roomId && data.leaderboard) {
+          setLeaderboard(data.leaderboard);
+          if (data.standings) {
+            setDebateScores(data.standings);
+          }
+          if (data.winner) {
+            setWinner(data.winner);
+          }
+        }
+      });
+
+      socket.on('debate_settings_updated', (data) => {
+        console.log('⚙️ Debate settings updated:', data);
+        if (data.roomId === roomId) {
+          fetchScoreboard();
+        }
+      });
+
+      socket.on('room_closed', (data) => {
+        console.log('🚫 Room closed:', data);
+        if (data.roomId === roomId) {
+          Alert.alert(
+            'Room Closed',
+            data.message || 'This room has been closed',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+        }
+      });
+    };
+
+    // Call the setup function
+    setupSocketListeners();
+
+    // Also set up initial room status check
+    checkRoomStatus();
 
 
   return () => {
-    socket.off('score_updated', handleScoreUpdated);
-    socket.off('debate_ended', handleDebateEnded);
-    socket.off('argument_evaluated', handleArgumentEvaluated);
-    socket.off('scoreboard_updated', handleScoreboardUpdate);
+    socket.off('score_updated');
+    socket.off('debate_ended');
+    socket.off('argument_evaluated');
+    socket.off('scoreboard_updated');
     socket.off('debate_settings_updated');
     socket.off('room_closed');
   };
-}, [roomId, userId,  fetchScoreboard]);
+}, [roomId,userId,fetchScoreboard,handleDebateEnded,navigation]);
 
 // Update handleMessage function
 const handleMessage = async () => {
@@ -796,7 +862,12 @@ const showWinnerModal = (winnerData) => {
     `${winnerData.awards?.bestArgument ?
       `Best Argument: ${winnerData.awards.bestArgument.username} (${winnerData.awards.bestArgument.score}pts)` : ''}`,
     [
-      { text: 'View Details', onPress: () => setShowScoreboard(true) },
+      { text: 'View Details', onPress: () => {navigation.navigate('DebateResults', {
+                                                           roomId: roomId,
+                                                           winner: winnerData.winner,
+                                                           scores: debateScores,
+                                                           leaderboard: leaderboard
+                                                         });} },
       { text: 'Continue Chat' }
     ]
   );
@@ -851,9 +922,40 @@ const endDebate = async () => {
               reason: 'User requested end'
             });
 
+            console.log('End debate API response:', response.data);
+
             if (response.data.success) {
-              Alert.alert('Success', 'Debate ended successfully');
+
+              setDebateEnded(true);
+              setWinner(response.data.winner || 'undecided');
+
+              if (response.data.stats) {
+                  setDebateScores(response.data.stats);
+              }
               fetchScoreboard();
+              Alert.alert(
+                              'Success!',
+                              `Debate ended successfully!\nWinner: ${(response.data.winner || 'undecided').toUpperCase()}`,
+                              [
+                                {
+                                  text: 'View Results',
+                                  onPress: () => {
+                                    navigation.navigate('DebateResults', {
+                                      roomId,
+                                      winner: response.data.winner || 'undecided',
+                                      scores: response.data.stats || debateScores,
+                                      leaderboard: leaderboard,
+                                      title: title,
+                                      desc: desc
+                                    });
+                                  }
+                                },
+                                {
+                                  text: 'Stay in Room',
+                                  style: 'cancel'
+                                }
+                              ]
+                            );
             }
 
             else {
