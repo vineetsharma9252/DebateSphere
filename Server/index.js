@@ -1662,12 +1662,43 @@ async function determineWinnerWithForcedEnd(roomId) {
     // Get all arguments for this room
     const arguments = await ArgumentEvaluation.find({ roomId });
 
+    const userStances = await UserStance.find({ roomId });
+
     // Calculate basic stats
     const stats = {
       favor: { total: 0, count: 0, average: 0, participants: new Set() },
       against: { total: 0, count: 0, average: 0, participants: new Set() },
       neutral: { total: 0, count: 0, average: 0, participants: new Set() }
     };
+
+    const winningTeam = !isTie ? winner : null;
+
+    if (winningTeam) {
+          // Update stats for users on the winning team
+          const winners = userStances.filter(stance => stance.stance === winningTeam);
+
+          for (const winner of winners) {
+            try {
+              await axios.post(`${BACKEND_URL}/api/update_user_stats`, {
+                username: winner.username,
+                isWinner: true
+              });
+            } catch (error) {
+              console.error(`Failed to update stats for ${winner.username}:`, error);
+            }
+          }
+          const losers = userStances.filter(stance => stance.stance !== winningTeam);
+                for (const loser of losers) {
+                  try {
+                    await axios.post(`${BACKEND_URL}/api/update_user_stats`, {
+                      username: loser.username,
+                      isWinner: false
+                    });
+                  } catch (error) {
+                    console.error(`Failed to update stats for ${loser.username}:`, error);
+                  }
+                }
+                }
 
     // Calculate total scores and counts
     arguments.forEach(arg => {
@@ -2404,6 +2435,59 @@ app.get('/api/debate/:roomId/results', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+
+// Update user statistics (total debates, debates won)
+app.post('/api/update_user_stats', async (req, res) => {
+  try {
+    const { username, isWinner } = req.body;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Increment total debates
+    user.total_debates = (user.total_debates || 0) + 1;
+
+    // Increment debates won if user won
+    if (isWinner) {
+      user.debates_won = (user.debates_won || 0) + 1;
+    }
+
+    // Recalculate rank (optional - you can implement your own ranking logic)
+    if (user.total_debates > 0) {
+      const winRate = (user.debates_won / user.total_debates) * 100;
+      // Simple ranking logic - adjust as needed
+      if (winRate >= 80) user.rank = 1;
+      else if (winRate >= 60) user.rank = 2;
+      else if (winRate >= 40) user.rank = 3;
+      else if (winRate >= 20) user.rank = 4;
+      else user.rank = 5;
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'User stats updated',
+      user: {
+        username: user.username,
+        total_debates: user.total_debates,
+        debates_won: user.debates_won,
+        rank: user.rank
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating user stats:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

@@ -388,27 +388,8 @@ export default function DebatePage() {
       const data = await response.json();
 
       if (response.ok) {
-          const enhancedRooms = await Promise.all(
-                  data.map(async (room) => {
-                    try {
-                      // Fetch debate results for each room
-                      const resultResponse = await fetch(`https://debatesphere-11.onrender.com/api/debate/${room.roomId}/scoreboard`);
-                      if (resultResponse.ok) {
-                        const resultData = await resultResponse.json();
-                        return {
-                          ...room,
-                          debateStatus: resultData.debateStatus || 'active',
-                          winner: resultData.winner || null,
-                          standings: resultData.standings || null
-                        };
-                      }
-                      return room;
-                    } catch (error) {
-                      return room;
-                    }
-                  })
-                );
-        setRooms(enhancedRooms);
+        // The data should already contain the new fields from the server
+        setRooms(data);
       } else {
         Alert.alert('Error', data.error || 'Failed to fetch rooms');
       }
@@ -498,96 +479,205 @@ export default function DebatePage() {
   );
 
   const renderRoom = ({ item, index }) => {
+    const getRoomStatus = (room) => {
+      if (!room.isActive) return { status: 'Closed', color: COLORS.danger };
+      if (room.debateStatus === 'ended') return { status: 'Ended', color: COLORS.textLight };
+      if (room.debateStatus === 'cancelled') return { status: 'Cancelled', color: COLORS.danger };
+      if (room.debateStatus === 'active') return { status: 'Live', color: COLORS.accent };
+      return { status: 'Active', color: COLORS.success };
+    };
 
-      const getRoomStatus = (room) => {
-          if (!room.isActive) return { status: 'Closed', color: COLORS.danger };
-          if (room.debateStatus === 'ended') return { status: 'Ended', color: COLORS.textLight };
-          if (room.debateStatus === 'active') return { status: 'Live', color: COLORS.accent };
-          return { status: 'Active', color: COLORS.success };
-        };
+    const roomStatus = getRoomStatus(item);
 
-        const roomStatus = getRoomStatus(item);
+    // Calculate participant count from standings or use default
+    const participantCount = item.standings ?
+      (item.standings.favor?.participants || 0) +
+      (item.standings.against?.participants || 0) +
+      (item.standings.neutral?.participants || 0) : 0;
 
-        // Calculate participant count from standings
-        const participantCount = item.standings ?
-          (item.standings.favor?.participants || 0) +
-          (item.standings.against?.participants || 0) +
-          (item.standings.neutral?.participants || 0) : 0;
+    // Check if room is closed/ended/cancelled
+    const isRoomClosed = !item.isActive ||
+                        item.debateStatus === 'ended' ||
+                        item.debateStatus === 'cancelled';
 
-
-      return (
-    <Animated.View
-      style={[
-        styles.roomItem,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }
-      ]}
-    >
-      <TouchableOpacity
-        style={styles.roomContent}
-        onPress={() => handleJoinRoom(item.roomId, item.title, item.desc)}
-        activeOpacity={0.8}
+    return (
+      <Animated.View
+        style={[
+          styles.roomItem,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
       >
-        <View style={styles.roomHeader}>
-          <View style={styles.roomIcon}>
-            <Text style={styles.roomIconText}>💬</Text>
-          </View>
-          <View style={styles.roomInfo}>
-            <Text style={styles.roomTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <Text style={styles.roomTopic}>#{item.topic || 'General'}</Text>
-          </View>
-          <View style={[styles.activeIndicator , {backgroundColor : `${roomStatus.color}20`}]}>
-            <View style={[styles.activeDot, { backgroundColor: roomStatus.color }]} />
-            <Text style={[styles.activeText, { color: roomStatus.color === COLORS.accent ? '#166534' : roomStatus.color }]}> {roomStatus.status}</Text>
-          </View>
-        </View>
+        <TouchableOpacity
+          style={[styles.roomContent, isRoomClosed && styles.roomContentDisabled]}
+          onPress={() => {
+            if (isRoomClosed) {
+              // Show appropriate message based on room status
+              let message = '';
+              let title = '';
 
-        <Text style={styles.roomDesc} numberOfLines={2}>
-          {item.desc || 'Join this engaging debate conversation'}
-        </Text>
-        <View style={styles.roomMetaInfo}>
-                  <View style={styles.metaItem}>
-                    <Text style={styles.metaLabel}>Participants:</Text>
-                    <Text style={styles.metaValue}>👥 {participantCount || '0'}</Text>
-                  </View>
-                  {item.winner && (
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Winner:</Text>
-                      <Text style={[styles.metaValue, { color: COLORS.success }]}>
-                        🏆 {item.winner.charAt(0).toUpperCase() + item.winner.slice(1)}
-                      </Text>
-                    </View>
-                  )}
+              if (item.debateStatus === 'ended') {
+                title = 'Debate Ended';
+                message = `This debate has concluded. ${
+                  item.winner && item.winner !== 'undecided'
+                    ? `Winner: ${item.winner.toUpperCase()}`
+                    : 'No clear winner'
+                }`;
+              } else if (item.debateStatus === 'cancelled') {
+                title = 'Debate Cancelled';
+                message = 'This debate has been cancelled by the creator.';
+              } else if (!item.isActive) {
+                title = 'Room Closed';
+                message = 'This room is no longer active.';
+              }
+
+              Alert.alert(
+                title,
+                message,
+                [
+                  {
+                    text: 'View Details',
+                    onPress: () => {
+                      if (item.winner) {
+                        const endedAt = item.endedAt ?
+                          new Date(item.endedAt).toLocaleDateString() :
+                          'Recently';
+
+                        Alert.alert(
+                          'Debate Details',
+                          `🏆 Winner: ${item.winner.toUpperCase()}\n\n` +
+                          `Status: ${item.debateStatus.toUpperCase()}\n` +
+                          `Ended: ${endedAt}\n` +
+                          `Participants: ${participantCount}\n` +
+                          `Topic: ${item.topic}`,
+                          [{ text: 'OK' }]
+                        );
+                      }
+                    }
+                  },
+                  { text: 'OK' }
+                ]
+              );
+            } else {
+              handleJoinRoom(item.roomId, item.title, item.desc);
+            }
+          }}
+          activeOpacity={isRoomClosed ? 1 : 0.8}
+          disabled={isRoomClosed}
+        >
+          <View style={styles.roomHeader}>
+            <View style={styles.roomIcon}>
+              <Text style={styles.roomIconText}>💬</Text>
+            </View>
+            <View style={styles.roomInfo}>
+              <Text style={styles.roomTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+              <Text style={styles.roomTopic}>#{item.topic || 'General'}</Text>
+            </View>
+            <View style={[styles.activeIndicator,
+              {backgroundColor: `${roomStatus.color}20`},
+              isRoomClosed && styles.closedIndicator
+            ]}>
+              <View style={[styles.activeDot, { backgroundColor: roomStatus.color }]} />
+              <Text style={[styles.activeText,
+                {
+                  color: isRoomClosed ? COLORS.textLight :
+                    roomStatus.color === COLORS.accent ? '#166534' : roomStatus.color
+                }
+              ]}>
+                {roomStatus.status}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.roomDesc, isRoomClosed && styles.roomDescDisabled]} numberOfLines={2}>
+            {item.desc || 'Join this engaging debate conversation'}
+          </Text>
+
+          <View style={styles.roomMetaInfo}>
+            <View style={styles.metaItem}>
+              <Text style={styles.metaLabel}>Participants:</Text>
+              <Text style={styles.metaValue}>👥 {participantCount || '0'}</Text>
+            </View>
+
+            {/* Show winner if debate ended */}
+            {item.winner && item.debateStatus === 'ended' && (
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>Winner:</Text>
+                <Text style={[styles.metaValue, {
+                  color: item.winner === 'favor' ? '#10b981' :
+                         item.winner === 'against' ? '#ef4444' :
+                         item.winner === 'neutral' ? '#6b7280' :
+                         COLORS.textLight
+                }]}>
+                  🏆 {item.winner === 'favor' ? 'In Favor' :
+                      item.winner === 'against' ? 'Against' :
+                      item.winner === 'neutral' ? 'Neutral' :
+                      item.winner === 'tie' ? 'Tie' :
+                      item.winner === 'draw' ? 'Draw' : 'Undecided'}
+                </Text>
               </View>
-        <View style={styles.roomFooter}>
-          <View style={styles.creatorInfo}>
-            <Text style={styles.creatorText}>
-              Created by {item.createdBy?.username || 'Anonymous'}
+            )}
+
+            {/* Show ended time if debate ended */}
+            {item.endedAt && item.debateStatus === 'ended' && (
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>Ended:</Text>
+                <Text style={[styles.metaValue, { color: COLORS.textLight }]}>
+                  {new Date(item.endedAt).toLocaleDateString()}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.roomFooter}>
+            <View style={styles.creatorInfo}>
+              <Text style={[styles.creatorText, isRoomClosed && styles.creatorTextDisabled]}>
+                Created by {item.createdBy?.username || 'Anonymous'}
+              </Text>
+            </View>
+            <View style={styles.roomMeta}>
+              <Text style={[styles.roomTime, isRoomClosed && styles.roomTimeDisabled]}>
+                {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Recently'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[
+            styles.joinButton,
+            isRoomClosed && styles.joinButtonDisabled
+          ]}>
+            <Text style={styles.joinButtonText}>
+              {isRoomClosed ? (
+                item.debateStatus === 'ended' ? 'Debate Ended' :
+                item.debateStatus === 'cancelled' ? 'Cancelled' :
+                'Room Closed'
+              ) : 'Join Debate →'}
             </Text>
           </View>
-          <View style={styles.roomMeta}>
-            <Text style={styles.roomTime}>
-              {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Recently'}
-            </Text>
-          </View>
-        </View>
 
-        <View style={[
-                  styles.joinButton,
-                  (!item.isActive || item.debateStatus === 'ended') && styles.joinButtonDisabled
-                ]}>
-                  <Text style={styles.joinButtonText}>
-                    {(!item.isActive || item.debateStatus === 'ended') ? 'Room Closed' : 'Join Debate →'}
-                  </Text>
-         </View>
-      </TouchableOpacity>
-    </Animated.View>
-  )};
-
+          {/* Show overlay for closed rooms */}
+          {isRoomClosed && (
+            <View style={styles.closedOverlay}>
+              <Text style={styles.closedText}>
+                {item.debateStatus === 'ended' ? 'DEBATE ENDED' :
+                 item.debateStatus === 'cancelled' ? 'CANCELLED' :
+                 'ROOM CLOSED'}
+              </Text>
+              {item.winner && item.debateStatus === 'ended' && (
+                <Text style={styles.winnerText}>
+                  Winner: {item.winner.toUpperCase()}
+                </Text>
+              )}
+            </View>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
   const renderTopic = ({ item, index }) => (
     <TouchableOpacity
       style={[
@@ -1317,5 +1407,42 @@ const styles = StyleSheet.create({
     joinButtonDisabled: {
       backgroundColor: COLORS.textLight,
       opacity: 0.7,
+    },
+
+    roomContentDisabled: {
+      opacity: 0.7,
+    },
+    closedIndicator: {
+      backgroundColor: '#f1f5f9',
+    },
+    roomDescDisabled: {
+      color: COLORS.textLight,
+    },
+    creatorTextDisabled: {
+      color: COLORS.textLight,
+      fontStyle: 'italic',
+    },
+    roomTimeDisabled: {
+      color: COLORS.textLight,
+    },
+    closedOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: 20,
+    },
+    closedText: {
+      color: 'white',
+      fontWeight: 'bold',
+      fontSize: 18,
+      backgroundColor: 'rgba(239, 68, 68, 0.8)',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 10,
     },
 });

@@ -747,7 +747,6 @@ useEffect(() => {
     socket.off('scoreboard_updated', handleScoreboardUpdate);
     socket.off('debate_settings_updated');
     socket.off('room_closed');
-
   };
 }, [roomId, userId,  fetchScoreboard]);
 

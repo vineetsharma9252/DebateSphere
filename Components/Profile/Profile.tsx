@@ -12,7 +12,8 @@ import {
   TextInput,
   Modal,
   Alert,
-  StatusBar
+  StatusBar,
+  RefreshControl
 } from 'react-native';
 import { Divider } from "react-native-elements";
 import { useNavigation } from 'react-native';
@@ -93,7 +94,27 @@ export default function Profile() {
         if (username) {
             fetchDetail(username);
             animateIn();
+
+            const interval = setInterval(() => {
+                  fetchDetail(username);
+                }, 30000);
+
+            return () => clearInterval(interval);
         }
+    }, [username]);
+
+    const [refreshing, setRefreshing] = useState(false);
+
+
+    const onRefresh = React.useCallback(() => {
+      setRefreshing(true);
+      if (username) {
+        fetchDetail(username).finally(() => {
+          setRefreshing(false);
+        });
+      } else {
+        setRefreshing(false);
+      }
     }, [username]);
 
     const animateIn = () => {
@@ -262,6 +283,14 @@ export default function Profile() {
             <ScrollView
                 style={styles.scrollView}
                 showsVerticalScrollIndicator={false}
+
+                refreshControl={
+                    <RefreshControl
+                    refreshing= {refreshing}
+                    onRefresh={onRefresh}
+                    colors={[COLORS.primary]}
+                    tintColor={COLORS.primary} />
+                    }
             >
                 {/* Header Section */}
                 <Animated.View
@@ -288,8 +317,11 @@ export default function Profile() {
                         </TouchableOpacity>
 
                         <View style={styles.profileInfo}>
+
                             <Text style={styles.username}>{username}</Text>
-                            <Text style={styles.userTitle}>Debate Enthusiast</Text>
+                                <TouchableOpacity onPress={() => fetchDetail(username)} style={styles.refreshButton}>
+                                  <Text style={styles.refreshIcon}>🔄</Text>
+                            </TouchableOpacity>
                             <View style={styles.rankContainer}>
                                 <Text style={styles.rankText}>Rank #{stats.ranking}</Text>
                             </View>
@@ -898,6 +930,19 @@ logoutButtonText: {
   color: '#dc2626',
   fontSize: 16,
   fontWeight: 'bold',
+},
+usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+},
+refreshButton: {
+    padding: 8,
+},
+refreshIcon: {
+    fontSize: 18,
+    color: 'white',
 },
 });
 
