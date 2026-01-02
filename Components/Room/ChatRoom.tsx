@@ -636,10 +636,12 @@ export default function ChatRoom({ route }) {
       if (response.data.success) {
         const { debateStatus, winner } = response.data;
         const isEnded = debateStatus === 'ended';
+        const isNotStarted = debateStatus === 'not_started';
 
         setRoomStatus({
           isActive: !isEnded,
           isEnded,
+          isNotStarted,
           winner
         });
 
@@ -666,6 +668,9 @@ export default function ChatRoom({ route }) {
 
           // Disable message sending
           setCanSendMessages(false);
+        }
+        if (isNotStarted) {
+                console.log('Debate not started yet - waiting for first argument');
         }
       }
     } catch (error) {

@@ -101,7 +101,7 @@ io.on("connection", (socket) => {
     }
 
     const debateResult = await DebateResult.findOne({ roomId });
-        if (debateResult && !debateResult.isActive) {
+        if (debateResult && debateResult.isActive === false) {
           socket.emit('room_closed', {
             roomId,
             message: 'This debate has ended',
@@ -693,6 +693,44 @@ async function cleanupExistingMessages() {
   }
 }
 
+
+async function ensureDebateResultExists(roomId, userId) {
+  try {
+    let debateResult = await DebateResult.findOne({ roomId });
+
+    if (!debateResult) {
+      // Get room info
+      const room = await Room.findOne({ roomId });
+
+      debateResult = new DebateResult({
+        roomId,
+        debateTitle: room?.title || `Debate ${roomId}`,
+        startTime: new Date(),
+        isActive: true,
+        totalRounds: 0,
+        settings: {
+          maxDuration: 1800, // 30 minutes
+          maxArguments: 50,
+          minArgumentsPerTeam: 3,
+          winMarginThreshold: 10
+        },
+        teamScores: {
+          favor: { totalPoints: 0, argumentCount: 0, averageScore: 0, participants: [] },
+          against: { totalPoints: 0, argumentCount: 0, averageScore: 0, participants: [] },
+          neutral: { totalPoints: 0, argumentCount: 0, averageScore: 0, participants: [] }
+        }
+      });
+
+      await debateResult.save();
+      console.log(`✅ Created new DebateResult for room ${roomId}`);
+    }
+
+    return debateResult;
+  } catch (error) {
+    console.error('Error ensuring debate result exists:', error);
+    throw error;
+  }
+}
 
 async function updateTeamScore(roomId, team, score, userId) { // ✅ Add userId parameter
   try {
@@ -1646,7 +1684,9 @@ app.put('/api/update_user_image', upload.single('image'), async (req, res) => {
 });
 
 
-async function determineWinnerWithForcedEnd(roomId) {
+async function determineWinnerWithForcedEnd(roomId,forceEnd=false) {
+
+
   try {
     const debateResult = await DebateResult.findOne({ roomId });
     if (!debateResult) {
@@ -1663,6 +1703,19 @@ async function determineWinnerWithForcedEnd(roomId) {
         reason: 'No debate data available'
       };
     }
+    if (!forceEnd) {
+          // Check if debate is already ended
+          if (!debateResult.isActive) {
+            return {
+              winner: debateResult.winningTeam || 'undecided',
+              margin: debateResult.marginOfVictory || 0,
+              stats: await getCurrentStandings(roomId),
+              awards: debateResult.awards || null,
+              reason: 'Debate already ended'
+            };
+          }
+          return null; // Debate should continue
+        }
 
     // Get all arguments for this room
     const arguments = await ArgumentEvaluation.find({ roomId });
@@ -2053,6 +2106,9 @@ app.get('/api/rooms/:roomId/status', async (req, res) => {
 
 app.post("/evaluate", async (req, res) => {
     const { argument, team, roomId, userId, username, messageId } = req.body;
+
+
+    await ensureDebateResultExists(roomId, userId);
     // Validate input
     if (!argument || argument.trim().length < 10) {
         return res.json({
@@ -2563,6 +2619,21 @@ app.get('/api/debate/:roomId/scoreboard', async (req, res) => {
     // Get debate result
     const debateResult = await DebateResult.findOne({ roomId });
 
+    if (!debateResult) {
+          return res.json({
+            success: true,
+            standings: {
+              favor: { total: 0, count: 0, average: 0, participants: 0 },
+              against: { total: 0, count: 0, average: 0, participants: 0 },
+              neutral: { total: 0, count: 0, average: 0, participants: 0 }
+            },
+            leaderboard: [],
+            debateStatus: 'not_started', // Add this status
+            winner: null,
+            totalArguments: 0,
+            lastUpdated: new Date().toISOString()
+          });
+     }
     // Get all arguments for this room
     const arguments = await ArgumentEvaluation.find({ roomId });
 
