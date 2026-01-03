@@ -454,10 +454,16 @@ const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId
           )}
 
           <TouchableOpacity
-            style={scoreboardStyles.endDebateButton}
+            style={[
+              scoreboardStyles.endDebateButton,
+              !canEndDebate && scoreboardStyles.endDebateButtonDisabled
+            ]}
             onPress={endDebate}
+            disabled={!canEndDebate}
           >
-            <Text style={scoreboardStyles.endDebateButtonText}>End Debate Now</Text>
+            <Text style={scoreboardStyles.endDebateButtonText}>
+              {canEndDebate ? 'End Debate Now' : `Wait ${Math.ceil((minEndTimeMinutes * 60 - debateTimer.elapsedSeconds) / 60)}m to End`}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -541,6 +547,16 @@ export default function ChatRoom({ route }) {
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
   const navigation = useNavigation();
+  const [debateTimer, setDebateTimer] = useState({
+      elapsedSeconds: 0,
+      totalDuration: 1800, // 30 minutes in seconds (default)
+      isActive: false,
+      startTime: null,
+      remainingSeconds: 0,
+    });
+  const [minEndTimeMinutes] = useState(5); // Minimum 5 minutes before debate can be ended
+  const [canEndDebate, setCanEndDebate] = useState(false);
+  const [timerInterval, setTimerInterval] = useState(null);
   // Add this to your state
   const [loadingScoreboard, setLoadingScoreboard] = useState(false);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
@@ -626,7 +642,132 @@ export default function ChatRoom({ route }) {
   };
 
 
+  // Start the debate timer
+  const startDebateTimer = useCallback((totalDuration = 1800) => {
+    console.log('⏰ Starting debate timer:', totalDuration);
 
+    // Clear any existing timer
+    if (timerInterval) {
+      clearInterval(timerInterval);
+    }
+
+    const startTime = new Date();
+    setDebateTimer(prev => ({
+      ...prev,
+      startTime,
+      totalDuration,
+      isActive: true,
+      elapsedSeconds: 0,
+      remainingSeconds: totalDuration,
+    }));
+
+    // Start interval
+    const interval = setInterval(() => {
+      setDebateTimer(prev => {
+        if (!prev.startTime || !prev.isActive) return prev;
+
+        const now = new Date();
+        const elapsedMs = now.getTime() - prev.startTime.getTime();
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        const remainingSeconds = Math.max(0, prev.totalDuration - elapsedSeconds);
+
+        // Check if debate can be ended (after minimum time)
+        const minEndTimeSeconds = minEndTimeMinutes * 60;
+        const canEnd = elapsedSeconds >= minEndTimeSeconds;
+        setCanEndDebate(canEnd);
+
+        // Auto-end if time is up
+        if (remainingSeconds <= 0) {
+          clearInterval(interval);
+          handleTimeUp();
+          return {
+            ...prev,
+            elapsedSeconds,
+            remainingSeconds: 0,
+            isActive: false,
+          };
+        }
+
+        return {
+          ...prev,
+          elapsedSeconds,
+          remainingSeconds,
+          isActive: true,
+        };
+      });
+    }, 1000);
+
+    setTimerInterval(interval);
+
+    // Initial check for end permission
+    setCanEndDebate(false); // Can't end immediately
+  }, [timerInterval, minEndTimeMinutes]);
+
+  const handleTimeUp = useCallback(async () => {
+    console.log('⏰ Debate time is up! Auto-ending...');
+
+    Alert.alert(
+      'Time\'s Up!',
+      'The debate duration has ended. Calculating results...',
+      [{ text: 'OK' }]
+    );
+
+    // Auto-end the debate
+    await endDebate();
+  }, [endDebate]);
+
+  // Format time display
+  const formatTime = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Calculate progress percentage
+  const calculateProgress = () => {
+    if (debateTimer.totalDuration <= 0) return 0;
+    return Math.min(100, (debateTimer.elapsedSeconds / debateTimer.totalDuration) * 100);
+  };
+
+  // Fetch debate timer from server
+  const fetchDebateTimer = useCallback(async () => {
+    try {
+      const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/timer`);
+
+      if (response.data.success) {
+        const { elapsedSeconds, totalDuration, startTime, isActive } = response.data;
+
+        if (isActive && startTime) {
+          // Calculate remaining time based on server time
+          const serverStartTime = new Date(startTime);
+          const now = new Date();
+          const elapsedMs = now.getTime() - serverStartTime.getTime();
+          const currentElapsedSeconds = Math.floor(elapsedMs / 1000);
+          const remainingSeconds = Math.max(0, totalDuration - currentElapsedSeconds);
+
+          setDebateTimer({
+            elapsedSeconds: currentElapsedSeconds,
+            totalDuration,
+            isActive,
+            startTime: serverStartTime,
+            remainingSeconds,
+          });
+
+          // Start local timer
+          if (isActive && remainingSeconds > 0) {
+            startDebateTimer(totalDuration);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching debate timer:', error);
+    }
+  }, [roomId, startDebateTimer]);
 
   const checkRoomStatus = async () => {
     try {
@@ -921,7 +1062,23 @@ const fetchScoreboard = useCallback(async () => {
   }
 }, [roomId]); // Add useCallback with dependency
 
-const endDebate = async () => {
+const endDebate = useCallback(async () => {
+
+  const minEndTimeSeconds = minEndTimeMinutes * 60;
+
+    if (debateTimer.elapsedSeconds < minEndTimeSeconds && debateTimer.isActive) {
+      const remainingTime = minEndTimeSeconds - debateTimer.elapsedSeconds;
+      const minutes = Math.ceil(remainingTime / 60);
+
+      Alert.alert(
+        'Cannot End Debate Yet',
+        `Debate must run for at least ${minEndTimeMinutes} minutes.\n` +
+        `Please wait ${minutes} more minute${minutes > 1 ? 's' : ''}.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
   Alert.alert(
     'End Debate',
     'Are you sure you want to end this debate? This will calculate the final winner.',
@@ -986,8 +1143,17 @@ const endDebate = async () => {
       }
     ]
   );
-};
+}, [debateTimer,elapsedSeconds, minEndTimeMinutes ,roomId, userId , fetchScoreboard , navigation , title ,desc , debateScores , leaderboard]);
   // Function to fetch user image by user ID
+
+  useEffect(() => {
+    return () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+    };
+  }, [timerInterval]);
+
   const fetchUserImageById = async (targetUserId) => {
     if (!targetUserId) return null;
 
@@ -1124,6 +1290,7 @@ const endDebate = async () => {
       checkUserStance();
 
       fetchScoreboard();
+      fetchDebateTimer() ;
     });
 
     socketRef.current.on('disconnect', (reason) => {
@@ -1263,7 +1430,7 @@ const endDebate = async () => {
         socketRef.current.disconnect();
       }
     };
-  }, [roomId, userId]);
+  }, [roomId, userId , fetchScoreboard, fetchDebateTimer]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -2040,6 +2207,58 @@ const endDebate = async () => {
           </Text>
         </View>
 
+
+        {/* Timer Display */}
+        {debateTimer.isActive && (
+          <View style={styles.timerContainer}>
+            <View style={styles.timerHeader}>
+              <Text style={styles.timerIcon}>⏰</Text>
+              <Text style={styles.timerTitle}>Debate Timer</Text>
+              {!canEndDebate && (
+                <View style={styles.timerWarning}>
+                  <Text style={styles.timerWarningText}>
+                    Can end in {Math.ceil((minEndTimeMinutes * 60 - debateTimer.elapsedSeconds) / 60)}m
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.timerProgressContainer}>
+              <View style={styles.timerProgressBar}>
+                <View
+                  style={[
+                    styles.timerProgressFill,
+                    {
+                      width: `${calculateProgress()}%`,
+                      backgroundColor: calculateProgress() > 80 ? '#ef4444' :
+                                     calculateProgress() > 60 ? '#f59e0b' : '#10b981'
+                    }
+                  ]}
+                />
+              </View>
+
+              <View style={styles.timerInfo}>
+                <Text style={styles.timerTime}>
+                  {formatTime(debateTimer.remainingSeconds)}
+                </Text>
+                <Text style={styles.timerElapsed}>
+                  {formatTime(debateTimer.elapsedSeconds)} elapsed
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.timerStatus}>
+              <View style={[
+                styles.timerStatusDot,
+                { backgroundColor: debateTimer.isActive ? '#10b981' : '#ef4444' }
+              ]} />
+              <Text style={styles.timerStatusText}>
+                {debateTimer.isActive ? 'Active' : 'Ended'}
+                {!canEndDebate && ' • Cannot end yet'}
+              </Text>
+            </View>
+          </View>
+        )}
         {/* User Stance Indicator */}
         {userStance && (
           <View style={[
@@ -3378,4 +3597,120 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  timerContainer: {
+      backgroundColor: '#ffffff',
+      marginHorizontal: 16,
+      marginTop: 8,
+      marginBottom: 8,
+      borderRadius: 16,
+      padding: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 4,
+      borderWidth: 1,
+      borderColor: '#e2e8f0',
+    },
+    timerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    timerIcon: {
+      fontSize: 20,
+      marginRight: 8,
+    },
+    timerTitle: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: '#1e293b',
+      flex: 1,
+    },
+    timerWarning: {
+      backgroundColor: '#fef3c7',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    timerWarningText: {
+      fontSize: 12,
+      color: '#92400e',
+      fontWeight: '500',
+    },
+    timerProgressContainer: {
+      marginBottom: 12,
+    },
+    timerProgressBar: {
+      height: 8,
+      backgroundColor: '#e2e8f0',
+      borderRadius: 4,
+      overflow: 'hidden',
+      marginBottom: 8,
+    },
+    timerProgressFill: {
+      height: '100%',
+      borderRadius: 4,
+    },
+    timerInfo: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    timerTime: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#1e293b',
+    },
+    timerElapsed: {
+      fontSize: 14,
+      color: '#64748b',
+    },
+    timerStatus: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    timerStatusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 6,
+    },
+    timerStatusText: {
+      fontSize: 14,
+      color: '#475569',
+    },
+
+    // Floating Timer Button (alternative compact view)
+    floatingTimerButton: {
+      position: 'absolute',
+      right: 16,
+      top: 100,
+      backgroundColor: '#1e293b',
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+      zIndex: 1000,
+    },
+    timerButtonIcon: {
+      fontSize: 18,
+      color: 'white',
+      marginRight: 8,
+    },
+    timerButtonText: {
+      color: 'white',
+      fontWeight: 'bold',
+      fontSize: 14,
+    },
+    endDebateButtonDisabled: {
+      backgroundColor: '#94a3b8',
+      opacity: 0.7,
+    },
 });

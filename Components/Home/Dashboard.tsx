@@ -76,7 +76,7 @@ export default function Dashboard() {
       }).start(() => {
         setShowWelcome(false);
       });
-    }, 5000); // 5 seconds
+    }, 7000); // 5 seconds
 
     return () => clearTimeout(welcomeTimer);
   }, []);

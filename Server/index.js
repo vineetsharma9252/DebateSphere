@@ -109,6 +109,21 @@ io.on("connection", (socket) => {
           });
           return;
     }
+    if (debateResult && debateResult.startTime) {
+        const now = new Date();
+        const elapsedMs = now.getTime() - debateResult.startTime.getTime();
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        const totalDuration = debateResult.settings?.maxDuration || 1800;
+
+        socket.emit('debate_timer_update', {
+          roomId,
+          elapsedSeconds,
+          totalDuration,
+          startTime: debateResult.startTime.toISOString(),
+          isActive: debateResult.isActive,
+          remainingSeconds: Math.max(0, totalDuration - elapsedSeconds)
+        });
+      }
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
@@ -172,6 +187,54 @@ io.on("connection", (socket) => {
       });
     }
   });
+
+// Timer control events
+socket.on('start_debate_timer', async (data) => {
+  try {
+    const { roomId, userId, duration } = data;
+
+    // Verify permissions
+    const room = await Room.findOne({ roomId });
+    if (!room) return;
+
+    const isCreator = room.createdBy.toString() === userId;
+    const user = await User.findById(userId);
+    const isModerator = user && user.isModerator;
+
+    if (!isCreator && !isModerator) return;
+
+    // Update debate result
+    let debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      debateResult = new DebateResult({
+        roomId,
+        debateTitle: room.title,
+        startTime: new Date(),
+        settings: {
+          maxDuration: duration || 1800,
+          minEndTime: 300
+        }
+      });
+    } else {
+      debateResult.startTime = new Date();
+      debateResult.settings.maxDuration = duration || 1800;
+      debateResult.isActive = true;
+    }
+
+    await debateResult.save();
+
+    // Broadcast to all users
+    io.to(roomId).emit('debate_timer_started', {
+      roomId,
+      startTime: debateResult.startTime,
+      duration: duration || 1800,
+      startedBy: userId
+    });
+
+  } catch (error) {
+    console.error('Socket timer start error:', error);
+  }
+});
 
 socket.on('get_debate_scores', async (data, callback) => {
     try {
@@ -2026,6 +2089,151 @@ async function getScoreboardData(roomId) {
   }
 }
 
+
+// API to start debate timer
+app.post('/api/debate/:roomId/timer/start', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { userId, duration = 1800 } = req.body; // duration in seconds
+
+    // Verify permissions
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ success: false, error: 'Room not found' });
+    }
+
+    // Only room creator or moderators can start timer
+    const user = await User.findById(userId);
+    const isCreator = room.createdBy.toString() === userId;
+    const isModerator = user && user.isModerator;
+
+    if (!isCreator && !isModerator) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only room creator or moderators can start timer'
+      });
+    }
+
+    // Get or create debate result
+    let debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      debateResult = new DebateResult({
+        roomId,
+        debateTitle: room.title,
+        startTime: new Date(),
+        settings: {
+          maxDuration: duration,
+          maxArguments: 50,
+          minArgumentsPerTeam: 3,
+          winMarginThreshold: 10,
+          minEndTime: 300 // 5 minutes minimum before ending
+        }
+      });
+    } else {
+      debateResult.startTime = new Date();
+      debateResult.settings.maxDuration = duration;
+      debateResult.isActive = true;
+    }
+
+    await debateResult.save();
+
+    // Broadcast timer start to all users
+    io.to(roomId).emit('debate_timer_started', {
+      roomId,
+      startTime: debateResult.startTime,
+      duration,
+      startedBy: userId
+    });
+
+    res.json({
+      success: true,
+      message: 'Debate timer started',
+      startTime: debateResult.startTime,
+      duration
+    });
+
+  } catch (error) {
+    console.error('Error starting timer:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API to get current timer status
+app.get('/api/debate/:roomId/timer', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const debateResult = await DebateResult.findOne({ roomId });
+
+    if (!debateResult || !debateResult.startTime) {
+      return res.json({
+        success: true,
+        isActive: false,
+        elapsedSeconds: 0,
+        totalDuration: 0,
+        startTime: null
+      });
+    }
+
+    const now = new Date();
+    const startTime = debateResult.startTime;
+    const elapsedMs = now.getTime() - startTime.getTime();
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+    const totalDuration = debateResult.settings?.maxDuration || 1800;
+
+    res.json({
+      success: true,
+      isActive: debateResult.isActive,
+      elapsedSeconds,
+      totalDuration,
+      startTime: startTime.toISOString(),
+      remainingSeconds: Math.max(0, totalDuration - elapsedSeconds),
+      canEnd: elapsedSeconds >= (debateResult.settings?.minEndTime || 300)
+    });
+
+  } catch (error) {
+    console.error('Error getting timer:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API to check if debate can be ended
+app.get('/api/debate/:roomId/can-end', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const debateResult = await DebateResult.findOne({ roomId });
+
+    if (!debateResult || !debateResult.startTime) {
+      return res.json({
+        success: true,
+        canEnd: false,
+        reason: 'Debate not started'
+      });
+    }
+
+    const now = new Date();
+    const startTime = debateResult.startTime;
+    const elapsedMs = now.getTime() - startTime.getTime();
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+    const minEndTime = debateResult.settings?.minEndTime || 300; // 5 minutes default
+
+    const canEnd = elapsedSeconds >= minEndTime;
+
+    res.json({
+      success: true,
+      canEnd,
+      elapsedSeconds,
+      minEndTime,
+      remainingTime: Math.max(0, minEndTime - elapsedSeconds),
+      reason: canEnd ? 'Debate can be ended' : `Must wait ${Math.ceil((minEndTime - elapsedSeconds) / 60)} more minutes`
+    });
+
+  } catch (error) {
+    console.error('Error checking if debate can end:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 app.get('/api/rooms/:roomId/full', async (req, res) => {
   try {
