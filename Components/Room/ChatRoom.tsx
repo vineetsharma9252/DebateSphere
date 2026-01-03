@@ -557,6 +557,7 @@ export default function ChatRoom({ route }) {
     against: { total: 0, count: 0, average: 0, participants: 0 },
     neutral: { total: 0, count: 0, average: 0, participants: 0 }
   });
+  const [canSendMessages, setCanSendMessages] = useState(true);
   const [roomStatus, setRoomStatus] = useState({
     isActive: true,
     isEnded: false,
@@ -647,6 +648,7 @@ export default function ChatRoom({ route }) {
 
         // If room is ended, show alert and optionally navigate back
         if (isEnded) {
+            setCanSendMessages(false);
           Alert.alert(
             'Debate Ended',
             `This debate has ended. Winner: ${winner !== 'undecided' ? winner : 'No clear winner'}`,
@@ -666,8 +668,10 @@ export default function ChatRoom({ route }) {
             ]
           );
 
-          // Disable message sending
-          setCanSendMessages(false);
+          // Enable message sending if debate is active
+          if (!isEnded && !isNotStarted) {
+              setCanSendMessages(true);
+          }
         }
         if (isNotStarted) {
                 console.log('Debate not started yet - waiting for first argument');
@@ -687,6 +691,7 @@ const handleDebateEnded = useCallback((data) => {
 
       setWinner(data.winner || 'undecided');
       setDebateEnded(true);
+      setCanSendMessages(false);
 
       if (data.stats) {
         setDebateScores(data.stats);
@@ -823,6 +828,13 @@ useEffect(() => {
 
 // Update handleMessage function
 const handleMessage = async () => {
+
+
+  if (!canSendMessages) {
+      Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
+      return;
+    }
+
   if (!text.trim() || !isConnected || !userStance) {
     Alert.alert('Error', 'Cannot send empty message or without stance');
     return;
@@ -932,6 +944,7 @@ const endDebate = async () => {
             if (response.data.success) {
 
               setDebateEnded(true);
+              setCanSendMessages(false); // Disable message sending
               setWinner(response.data.winner || 'undecided');
 
               if (response.data.stats) {
@@ -1275,8 +1288,13 @@ const endDebate = async () => {
   };
 
   const sendMessage = async (imageData = null) => {
+    if (!canSendMessages) {
+        Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
+        return;
+    }
     if (!isConnected || isConnecting) return;
     if (!text.trim() && !imageData) return;
+
 
     // Check if user has selected a stance
     if (!userStance) {
@@ -2134,7 +2152,7 @@ const endDebate = async () => {
         <View style={styles.inputRow}>
           <ImageUploader
             onImageSelected={handleImageSelected}
-            disabled={!isConnected || isConnecting || !userStance}
+            disabled={!isConnected || isConnecting || !userStance || !canSendMessages}
           />
           <TextInput
             style={[
@@ -2152,17 +2170,17 @@ const endDebate = async () => {
             onSubmitEditing={() => sendMessage()}
             returnKeyType="send"
             onKeyPress={handleKeyPress}
-            editable={isConnected && !isConnecting && !!userStance}
+            editable={ isConnected && !isConnecting && !!userStance && canSendMessages }
             multiline
             maxLength={500}
           />
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              (!text.trim() || !isConnected || isConnecting || !userStance) && styles.sendBtnDisabled,
+              (!text.trim() || !isConnected || isConnecting || !userStance || !canSendMessages ) && styles.sendBtnDisabled,
             ]}
             onPress={() => sendMessage()}
-            disabled={!text.trim() || !isConnected || isConnecting || !userStance}
+            disabled={!text.trim() || !isConnected || isConnecting || !userStance || !canSendMessages}
           >
             <Text style={styles.sendBtnText}>➤</Text>
           </TouchableOpacity>
