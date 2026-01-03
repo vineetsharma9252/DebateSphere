@@ -1143,7 +1143,7 @@ const endDebate = useCallback(async () => {
       }
     ]
   );
-}, [debateTimer,elapsedSeconds, minEndTimeMinutes ,roomId, userId , fetchScoreboard , navigation , title ,desc , debateScores , leaderboard]);
+}, [debateTimer.elapsedSeconds, minEndTimeMinutes ,roomId, userId , fetchScoreboard , navigation , title ,desc , debateScores , leaderboard]);
   // Function to fetch user image by user ID
 
   useEffect(() => {
