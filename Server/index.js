@@ -1067,6 +1067,8 @@ app.post('/api/get_user_by_id', async (req, res) => {
 });
 
 
+
+
 app.get('/api/online_users', (req, res) => {
   res.json({
     onlineCount: onlineUsers.size,
@@ -1509,6 +1511,27 @@ app.post("/signup", async (req, res) => {
   await newUser.save();
 
   res.status(201).json({ message: "User registered", user: newUser._id });
+});
+
+// Add this endpoint to check if debate has started
+app.get('/api/debate/:roomId/has-started', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const arguments = await ArgumentEvaluation.find({ roomId });
+    const debateResult = await DebateResult.findOne({ roomId });
+
+    res.json({
+      success: true,
+      hasStarted: arguments.length > 0,
+      hasTimer: !!debateResult?.startTime,
+      argumentCount: arguments.length,
+      timerActive: debateResult?.isActive || false
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 app.post('/login', async (req, res) => {
@@ -2346,6 +2369,8 @@ app.post("/evaluate", async (req, res) => {
         }
       }
 
+
+
         console.log(`📌 Using messageId for evaluation: ${actualMessageId || 'Not found'}`);
 
     // Short, effective prompt
@@ -2397,8 +2422,7 @@ Return ONLY valid JSON with this structure:
         try {
             evaluation = JSON.parse(resultText);
             console.log("✅ Parsed AI evaluation:", evaluation);
-
-            // Validate the response has all required fields
+               // Validate the response has all required fields
             const requiredFields = ['clarity', 'relevance', 'logic', 'evidence',
                                    'persuasiveness', 'rebuttal', 'totalScore', 'feedback'];
             const hasAllFields = requiredFields.every(field => field in evaluation);
@@ -2471,6 +2495,52 @@ Return ONLY valid JSON with this structure:
               console.error("Error updating message with evaluation:", error);
             }
           }
+
+        const existingArguments = await ArgumentEvaluation.find({ roomId });
+            const debateResult = await DebateResult.findOne({ roomId });
+
+            if (existingArguments.length === 0 && (!debateResult || !debateResult.startTime)) {
+              console.log('⏰ First argument submitted - starting debate timer');
+
+              // Auto-start timer for 30 minutes
+              if (!debateResult) {
+                debateResult = new DebateResult({
+                  roomId,
+                  debateTitle: room?.title || `Debate ${roomId}`,
+                  startTime: new Date(),
+                  isActive: true,
+                  settings: {
+                    maxDuration: 1800, // 30 minutes
+                    maxArguments: 50,
+                    minArgumentsPerTeam: 3,
+                    winMarginThreshold: 10,
+                    minEndTime: 300 // 5 minutes
+                  }
+                });
+              } else {
+                debateResult.startTime = new Date();
+                debateResult.isActive = true;
+                if (!debateResult.settings) {
+                  debateResult.settings = {
+                    maxDuration: 1800,
+                    minEndTime: 300
+                  };
+                }
+              }
+
+              await debateResult.save();
+
+              // Broadcast timer start to all users
+              io.to(roomId).emit('debate_timer_started', {
+                roomId,
+                startTime: debateResult.startTime,
+                duration: debateResult.settings.maxDuration,
+                startedBy: userId,
+                autoStarted: true
+              });
+
+              console.log('✅ Auto-started debate timer');
+            }
         // Update team scores
         await updateTeamScore(roomId, team, evaluation.totalScore, userId);
         const updatedScoreboard = await getScoreboardData(roomId);
@@ -2531,7 +2601,6 @@ Return ONLY valid JSON with this structure:
         const currentStandings = await getCurrentStandings(roomId);
 
                 // Check if debate should end
-        const debateResult = await DebateResult.findOne({ roomId });
         if (debateResult) {
             const shouldEndByArguments = debateResult.totalRounds >= debateResult.settings.maxArguments;
             const debateDuration = (new Date() - debateResult.startTime) / 1000;

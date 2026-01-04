@@ -632,7 +632,7 @@ export default function ChatRoom({ route }) {
     const stanceData = stanceColors[stance];
     return stanceData ? stanceData.text : '#1e293b';
   };
-
+    const debouncedTimerUpdate = useDebounce(debateTimer, 1000);
   // Function to get background color based on stance
   const getStanceBackgroundColor = (stance) => {
     if (!stance) return '#f8fafc'; // Default background
@@ -649,6 +649,7 @@ export default function ChatRoom({ route }) {
     // Clear any existing timer
     if (timerInterval) {
       clearInterval(timerInterval);
+      setTimerInterval(null);
     }
 
     const startTime = new Date();
@@ -664,7 +665,11 @@ export default function ChatRoom({ route }) {
     // Start interval
     const interval = setInterval(() => {
       setDebateTimer(prev => {
-        if (!prev.startTime || !prev.isActive) return prev;
+        if (!prev.startTime || !prev.isActive) {
+
+            clearInterval(interval);
+            return prev ;
+            }
 
         const now = new Date();
         const elapsedMs = now.getTime() - prev.startTime.getTime();
@@ -674,7 +679,11 @@ export default function ChatRoom({ route }) {
         // Check if debate can be ended (after minimum time)
         const minEndTimeSeconds = minEndTimeMinutes * 60;
         const canEnd = elapsedSeconds >= minEndTimeSeconds;
-        setCanEndDebate(canEnd);
+
+
+        if (canEnd !== canEndDebate) {
+            setCanEndDebate(canEnd);
+        }
 
         // Auto-end if time is up
         if (remainingSeconds <= 0) {
@@ -692,7 +701,6 @@ export default function ChatRoom({ route }) {
           ...prev,
           elapsedSeconds,
           remainingSeconds,
-          isActive: true,
         };
       });
     }, 1000);
@@ -701,10 +709,31 @@ export default function ChatRoom({ route }) {
 
     // Initial check for end permission
     setCanEndDebate(false); // Can't end immediately
-  }, [timerInterval, minEndTimeMinutes]);
+  }, [timerInterval, minEndTimeMinutes, canEndDebate]);
 
+    // Add this cleanup useEffect
+    useEffect(() => {
+      return () => {
+        // Clean up timer interval
+        if (timerInterval) {
+          clearInterval(timerInterval);
+        }
+
+        // Clean up socket connection
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+          socketRef.current = null;
+        }
+      };
+    }, [timerInterval]);
   const handleTimeUp = useCallback(async () => {
     console.log('⏰ Debate time is up! Auto-ending...');
+
+    // Clear the timer interval
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
 
     Alert.alert(
       'Time\'s Up!',
@@ -713,8 +742,19 @@ export default function ChatRoom({ route }) {
     );
 
     // Auto-end the debate
-    await endDebate();
-  }, [endDebate]);
+    try {
+      const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
+        userId: userId,
+        reason: 'Time expired'
+      });
+
+      if (response.data.success) {
+        console.log('✅ Debate auto-ended successfully');
+      }
+    } catch (error) {
+      console.error('Error auto-ending debate:', error);
+    }
+  }, [roomId, userId, timerInterval]); // Add timerInterval to dependencies
 
   // Format time display
   const formatTime = (seconds) => {
@@ -737,37 +777,54 @@ export default function ChatRoom({ route }) {
   // Fetch debate timer from server
   const fetchDebateTimer = useCallback(async () => {
     try {
+      console.log('🕒 Fetching debate timer for room:', roomId);
       const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/timer`);
 
       if (response.data.success) {
-        const { elapsedSeconds, totalDuration, startTime, isActive } = response.data;
+        const { elapsedSeconds, totalDuration, startTime, isActive, remainingSeconds } = response.data;
+        console.log('📊 Timer data received:', { elapsedSeconds, totalDuration, isActive });
 
-        if (isActive && startTime) {
-          // Calculate remaining time based on server time
-          const serverStartTime = new Date(startTime);
-          const now = new Date();
-          const elapsedMs = now.getTime() - serverStartTime.getTime();
-          const currentElapsedSeconds = Math.floor(elapsedMs / 1000);
-          const remainingSeconds = Math.max(0, totalDuration - currentElapsedSeconds);
+        setDebateTimer(prev => {
+          // Don't update if values are the same to prevent re-renders
+          if (
+            prev.elapsedSeconds === elapsedSeconds &&
+            prev.totalDuration === totalDuration &&
+            prev.isActive === isActive &&
+            prev.remainingSeconds === remainingSeconds
+          ) {
+            return prev;
+          }
 
-          setDebateTimer({
-            elapsedSeconds: currentElapsedSeconds,
-            totalDuration,
-            isActive,
-            startTime: serverStartTime,
-            remainingSeconds,
-          });
+          return {
+            elapsedSeconds: elapsedSeconds || 0,
+            totalDuration: totalDuration || 1800,
+            isActive: isActive || false,
+            startTime: startTime ? new Date(startTime) : null,
+            remainingSeconds: remainingSeconds || Math.max(0, (totalDuration || 1800) - (elapsedSeconds || 0)),
+          };
+        });
 
-          // Start local timer
-          if (isActive && remainingSeconds > 0) {
+        // Start local timer only if active and not already running
+        if (isActive && (remainingSeconds > 0 || totalDuration - elapsedSeconds > 0)) {
+          if (!timerInterval) {
+            console.log('⏰ Starting local timer with duration:', totalDuration);
             startDebateTimer(totalDuration);
           }
+        } else if (timerInterval) {
+          // Clear timer if debate is not active
+          clearInterval(timerInterval);
+          setTimerInterval(null);
+        }
+
+        // Check if debate can be ended
+        if (isActive && elapsedSeconds >= 300) { // 5 minutes
+          setCanEndDebate(true);
         }
       }
     } catch (error) {
       console.error('Error fetching debate timer:', error);
     }
-  }, [roomId, startDebateTimer]);
+  }, [roomId, timerInterval, startDebateTimer]); // Keep dependencies minimal
 
   const checkRoomStatus = async () => {
     try {
@@ -1031,6 +1088,23 @@ const showWinnerModal = (winnerData) => {
   );
 };
 
+// Add this debounce function
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const fetchScoreboard = useCallback(async () => {
   try {
     setLoadingScoreboard(true);
@@ -1091,6 +1165,13 @@ const endDebate = useCallback(async () => {
           try {
 
             console.log(`🎯 Ending debate for room ${roomId} by user ${userId}`);
+
+            // Clear timer interval first
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                setTimerInterval(null);
+            }
+
             const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
               userId: userId,
               reason: 'User requested end'
@@ -1103,6 +1184,7 @@ const endDebate = useCallback(async () => {
               setDebateEnded(true);
               setCanSendMessages(false); // Disable message sending
               setWinner(response.data.winner || 'undecided');
+              setDebateTimer(prev => ({ ...prev, isActive: false })); // Stop timer
 
               if (response.data.stats) {
                   setDebateScores(response.data.stats);
@@ -1143,7 +1225,7 @@ const endDebate = useCallback(async () => {
       }
     ]
   );
-}, [debateTimer.elapsedSeconds, minEndTimeMinutes ,roomId, userId , fetchScoreboard , navigation , title ,desc , debateScores , leaderboard]);
+}, [debateTimer.elapsedSeconds, minEndTimeMinutes ,roomId, userId , fetchScoreboard , navigation , title ,desc , debateScores , leaderboard,timerInterval]);
   // Function to fetch user image by user ID
 
   useEffect(() => {
@@ -1292,6 +1374,33 @@ const endDebate = useCallback(async () => {
       fetchScoreboard();
       fetchDebateTimer() ;
     });
+    socketRef.current.on('debate_timer_started', (data) => {
+        console.log('⏰ Debate timer started via socket:', data);
+        if (data.roomId === roomId) {
+          fetchDebateTimer() ;
+        }
+      });
+
+      socketRef.current.on('debate_timer_update', (data) => {
+        console.log('⏰ Debate timer update:', data);
+        if (data.roomId === roomId) {
+          setDebateTimer(prev => ({
+            ...prev,
+            elapsedSeconds: data.elapsedSeconds || 0,
+            totalDuration: data.totalDuration || 1800,
+            isActive: data.isActive || false,
+            startTime: data.startTime ? new Date(data.startTime) : null,
+            remainingSeconds: data.remainingSeconds || 0,
+          }));
+
+          // Start local timer if active
+          const minEndTimeSeconds = minEndTimeMinutes * 60;
+                  const canEnd = data.elapsedSeconds >= minEndTimeSeconds;
+                  if (canEnd !== canEndDebate) {
+                    setCanEndDebate(canEnd);
+                  }
+        }
+      });
 
     socketRef.current.on('disconnect', (reason) => {
       console.log('Disconnected from server:', reason);
@@ -1430,7 +1539,7 @@ const endDebate = useCallback(async () => {
         socketRef.current.disconnect();
       }
     };
-  }, [roomId, userId , fetchScoreboard, fetchDebateTimer]);
+  }, [roomId, userId]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -1489,13 +1598,13 @@ const endDebate = useCallback(async () => {
     proceedWithMessage(messageText, imageData);
   };
 
-  const proceedWithMessage = (messageText, imageData, isAIDetected = false) => {
+  const proceedWithMessage = async (messageText, imageData, isAIDetected = false) => {
     const currentUserImage = user?.user_image || userImage || '';
     const cleanedText = messageText
-        .replace(/\n\s*\n\s*\n/g, '\n\n')
-        .replace(/^\s+|\s+$/g, '')
-        .replace(/\s+$/gm, '')
-        .replace(/\n{3,}/g, '\n\n');
+      .replace(/\n\s*\n\s*\n/g, '\n\n')
+      .replace(/^\s+|\s+$/g, '')
+      .replace(/\s+$/gm, '')
+      .replace(/\n{3,}/g, '\n\n');
 
     const messageData = {
       text: cleanedText,
@@ -1515,71 +1624,88 @@ const endDebate = useCallback(async () => {
     socketRef.current.emit('send_message', messageData, async (ack) => {
       console.log('Server ACK:', ack);
       if (ack && ack.status === "ok") {
-            // Then evaluate the argument
+        // Check if timer needs to be started (first argument)
+        if (!debateTimer.isActive) {
+          try {
+            console.log('⏰ Attempting to start timer for first argument...');
+            const timerResponse = await axios.post(`${SERVER_URL}/api/debate/${roomId}/timer/start`, {
+              userId: userId,
+              duration: 1800 // 30 minutes
+            });
 
-            const actualMessageId = ack.id || tempMessageId;
-            try {
+            if (timerResponse.data.success) {
+              console.log('✅ Timer started successfully');
+              // The socket event will update the timer
+            }
+          } catch (timerError) {
+            console.error('Error starting timer:', timerError);
+            // Don't block message sending if timer fails
+          }
+        }
 
-                console.log("Evaluation Started ...") ;
-              const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-                argument: cleanedText,
-                team: (userStance.id || userStance).toLowerCase(),
-                roomId: roomId,
-                userId: userId,
-                username: username,
-                messageId: actualMessageId
-              });
+        // Then evaluate the argument
+        const actualMessageId = ack.id;
+        try {
+          console.log("Evaluation Started ...");
+          const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
+            argument: cleanedText,
+            team: (userStance.id || userStance).toLowerCase(),
+            roomId: roomId,
+            userId: userId,
+            username: username,
+            messageId: actualMessageId
+          });
 
-              if (evalResponse.data.success) {
-                const { evaluation, currentStandings, winner } = evalResponse.data;
+          if (evalResponse.data.success) {
+            const { evaluation, currentStandings, winner } = evalResponse.data;
 
-                // Update local scores
-                if (currentStandings){
-                setDebateScores(currentStandings);
-                }
-
-                // REFRESH LEADERBOARD AFTER EVALUATION
-                fetchScoreboard();
-
-                // Show evaluation to user
-                Alert.alert(
-                  '📊 Argument Evaluated!',
-                  `Your argument scored: ${evaluation.totalScore}/60\n\n` +
-                  `Clarity: ${evaluation.clarity}/10\n` +
-                  `Relevance: ${evaluation.relevance}/10\n` +
-                  `Logic: ${evaluation.logic}/10\n` +
-                  `Evidence: ${evaluation.evidence}/10\n` +
-                  `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
-                  `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
-                  `Feedback: ${evaluation.feedback}`,
-                  [{ text: 'OK' }]
-                );
-
-                // Update message with evaluation score
-                const updatedMessageData = {
-                  ...messageData,
-                  evaluationId: evaluation.evaluationId,
-                  evaluationScore: evaluation.totalScore
-                };
-
-                // Re-emit with evaluation data
-                socketRef.current.emit('update_message_evaluation', updatedMessageData);
-
-                // Check if debate ended
-                if (winner && winner.winner !== 'undecided') {
-                  setWinner(winner.winner);
-                  setDebateEnded(true);
-                  // Refresh leaderboard when debate ends
-                  fetchScoreboard();
-                }
-              }
-            } catch (error) {
-              console.error('Evaluation error:', error);
-              // Continue without evaluation
+            // Update local scores
+            if (currentStandings) {
+              setDebateScores(currentStandings);
             }
 
-            setText('');
+            // REFRESH LEADERBOARD AFTER EVALUATION
+            fetchScoreboard();
+
+            // Show evaluation to user
+            Alert.alert(
+              '📊 Argument Evaluated!',
+              `Your argument scored: ${evaluation.totalScore}/60\n\n` +
+              `Clarity: ${evaluation.clarity}/10\n` +
+              `Relevance: ${evaluation.relevance}/10\n` +
+              `Logic: ${evaluation.logic}/10\n` +
+              `Evidence: ${evaluation.evidence}/10\n` +
+              `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
+              `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
+              `Feedback: ${evaluation.feedback}`,
+              [{ text: 'OK' }]
+            );
+
+            // Update message with evaluation score
+            const updatedMessageData = {
+              ...messageData,
+              evaluationId: evaluation.evaluationId,
+              evaluationScore: evaluation.totalScore
+            };
+
+            // Re-emit with evaluation data
+            socketRef.current.emit('update_message_evaluation', updatedMessageData);
+
+            // Check if debate ended
+            if (winner && winner.winner !== 'undecided') {
+              setWinner(winner.winner);
+              setDebateEnded(true);
+              // Refresh leaderboard when debate ends
+              fetchScoreboard();
+            }
           }
+        } catch (error) {
+          console.error('Evaluation error:', error);
+          // Continue without evaluation
+        }
+
+        setText('');
+      }
       if (ack && ack.error) {
         Alert.alert('Error', 'Failed to send message');
       } else if (isAIDetected) {
@@ -2207,56 +2333,75 @@ const endDebate = useCallback(async () => {
           </Text>
         </View>
 
+        {/* Connection Status Monitor */}
+        <View style={[
+          styles.connectionMonitor,
+          isConnecting && styles.connectionMonitorConnecting,
+          !isConnected && !isConnecting && styles.connectionMonitorDisconnected
+        ]}>
+          <View style={[
+            styles.connectionMonitorDot,
+            isConnected ? styles.connectedDot : styles.disconnectedDot
+          ]} />
+          <Text style={styles.connectionMonitorText}>
+            {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
+          </Text>
+          {isConnecting && <ActivityIndicator size="small" color="#fff" style={{ marginLeft: 8 }} />}
+        </View>
 
         {/* Timer Display */}
-        {debateTimer.isActive && (
+
+        {(debateTimer.totalDuration > 0) && (
           <View style={styles.timerContainer}>
             <View style={styles.timerHeader}>
               <Text style={styles.timerIcon}>⏰</Text>
-              <Text style={styles.timerTitle}>Debate Timer</Text>
-              {!canEndDebate && (
-                <View style={styles.timerWarning}>
-                  <Text style={styles.timerWarningText}>
-                    Can end in {Math.ceil((minEndTimeMinutes * 60 - debateTimer.elapsedSeconds) / 60)}m
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.timerProgressContainer}>
-              <View style={styles.timerProgressBar}>
-                <View
-                  style={[
-                    styles.timerProgressFill,
-                    {
-                      width: `${calculateProgress()}%`,
-                      backgroundColor: calculateProgress() > 80 ? '#ef4444' :
-                                     calculateProgress() > 60 ? '#f59e0b' : '#10b981'
-                    }
-                  ]}
-                />
-              </View>
-
-              <View style={styles.timerInfo}>
-                <Text style={styles.timerTime}>
-                  {formatTime(debateTimer.remainingSeconds)}
-                </Text>
-                <Text style={styles.timerElapsed}>
-                  {formatTime(debateTimer.elapsedSeconds)} elapsed
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.timerStatus}>
-              <View style={[
-                styles.timerStatusDot,
-                { backgroundColor: debateTimer.isActive ? '#10b981' : '#ef4444' }
-              ]} />
-              <Text style={styles.timerStatusText}>
-                {debateTimer.isActive ? 'Active' : 'Ended'}
-                {!canEndDebate && ' • Cannot end yet'}
+              <Text style={styles.timerTitle}>
+                {debateTimer.isActive ? 'Debate Timer' : 'Debate Not Started'}
               </Text>
             </View>
+
+            {debateTimer.isActive ? (
+              <>
+                <View style={styles.timerProgressContainer}>
+                  <View style={styles.timerProgressBar}>
+                    <View
+                      style={[
+                        styles.timerProgressFill,
+                        {
+                          width: `${Math.min(100, calculateProgress())}%`,
+                          backgroundColor: calculateProgress() > 80 ? '#ef4444' :
+                                         calculateProgress() > 60 ? '#f59e0b' : '#10b981'
+                        }
+                      ]}
+                    />
+                  </View>
+
+                  <View style={styles.timerInfo}>
+                    <Text style={styles.timerTime}>
+                      {formatTime(debateTimer.remainingSeconds)}
+                    </Text>
+                    <Text style={styles.timerElapsed}>
+                      {formatTime(debateTimer.elapsedSeconds)} elapsed
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.timerStatus}>
+                  <View style={[
+                    styles.timerStatusDot,
+                    { backgroundColor: debateTimer.isActive ? '#10b981' : '#6b7280' }
+                  ]} />
+                  <Text style={styles.timerStatusText}>
+                    {debateTimer.isActive ? 'Active' : 'Not Started'}
+                    {!canEndDebate && ' • Cannot end yet'}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.timerInactiveText}>
+                Timer will start when first argument is submitted
+              </Text>
+            )}
           </View>
         )}
         {/* User Stance Indicator */}
@@ -3712,5 +3857,36 @@ const styles = StyleSheet.create({
     endDebateButtonDisabled: {
       backgroundColor: '#94a3b8',
       opacity: 0.7,
+    },
+    connectionMonitor: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 8,
+      backgroundColor: '#10b981',
+    },
+    connectionMonitorConnecting: {
+      backgroundColor: '#f59e0b',
+    },
+    connectionMonitorDisconnected: {
+      backgroundColor: '#ef4444',
+    },
+    connectionMonitorDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 8,
+    },
+    connectionMonitorText: {
+      color: 'white',
+      fontSize: 12,
+      fontWeight: '500',
+    },
+
+    timerInactiveText: {
+      color: '#64748b',
+      fontSize: 14,
+      textAlign: 'center',
+      paddingVertical: 8,
     },
 });
