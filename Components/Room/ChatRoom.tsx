@@ -632,6 +632,22 @@ export default function ChatRoom({ route }) {
     const stanceData = stanceColors[stance];
     return stanceData ? stanceData.text : '#1e293b';
   };
+  // Add this debounce function
+  const useDebounce = (value, delay) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value);
+      }, delay);
+
+      return () => {
+        clearTimeout(handler);
+      };
+    }, [value, delay]);
+
+    return debouncedValue;
+  };
     const debouncedTimerUpdate = useDebounce(debateTimer, 1000);
   // Function to get background color based on stance
   const getStanceBackgroundColor = (stance) => {
@@ -1088,22 +1104,7 @@ const showWinnerModal = (winnerData) => {
   );
 };
 
-// Add this debounce function
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
 
 const fetchScoreboard = useCallback(async () => {
   try {
