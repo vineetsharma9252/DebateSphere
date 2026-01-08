@@ -546,6 +546,8 @@ export default function ChatRoom({ route }) {
   const [aiWarningVisible, setAiWarningVisible] = useState(false);
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
+  const fetchTimerAbortController = useRef(null);
+  const lastTimerFetch = useRef(0);
   const navigation = useNavigation();
   const [debateTimer, setDebateTimer] = useState({
       elapsedSeconds: 0,
@@ -557,6 +559,7 @@ export default function ChatRoom({ route }) {
   const [minEndTimeMinutes] = useState(5); // Minimum 5 minutes before debate can be ended
   const [canEndDebate, setCanEndDebate] = useState(false);
   const [timerInterval, setTimerInterval] = useState(null);
+  const timerIntervalRef = useRef(null);
   // Add this to your state
   const [loadingScoreboard, setLoadingScoreboard] = useState(false);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
@@ -663,12 +666,11 @@ export default function ChatRoom({ route }) {
   const startDebateTimer = useCallback((totalDuration = 1800) => {
     console.log('⏰ Starting debate timer:', totalDuration);
 
-    // Clear any existing timer FIRST
-    if (timerInterval) {
-      console.log('🔄 Clearing existing timer interval');
-      clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
+    if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+     }
+
 
     const startTime = new Date();
     setDebateTimer(prev => ({
@@ -682,45 +684,29 @@ export default function ChatRoom({ route }) {
 
     // Create new interval
     const interval = setInterval(() => {
-      setDebateTimer(prev => {
-        if (!prev.startTime || !prev.isActive) {
-          console.log('⏰ Timer not active, clearing interval');
-          clearInterval(interval);
-          return prev;
-        }
+        setDebateTimer(prev => {
+          if (!prev.isActive) {
+            // Clean up if not active
+            if (timerIntervalRef.current) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+            return prev;
+          }
 
-        const now = new Date();
-        const elapsedMs = now.getTime() - prev.startTime.getTime();
-        const elapsedSeconds = Math.floor(elapsedMs / 1000);
-        const remainingSeconds = Math.max(0, prev.totalDuration - elapsedSeconds);
+          const now = new Date();
+          const elapsed = Math.floor((now - prev.startTime) / 1000);
+          const remaining = Math.max(0, prev.totalDuration - elapsed);
 
-        // Check if debate can be ended
-        const minEndTimeSeconds = minEndTimeMinutes * 60;
-        const canEnd = elapsedSeconds >= minEndTimeSeconds;
+          if (remaining <= 0) {
+            clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
+            handleTimeUp();
+          }
 
-        // Update canEndDebate state
-        setCanEndDebate(canEnd);
-
-        // Auto-end if time is up
-        if (remainingSeconds <= 0) {
-          console.log('⏰ Time up, clearing interval');
-          clearInterval(interval);
-          handleTimeUp();
-          return {
-            ...prev,
-            elapsedSeconds,
-            remainingSeconds: 0,
-            isActive: false,
-          };
-        }
-
-        return {
-          ...prev,
-          elapsedSeconds,
-          remainingSeconds,
-        };
-      });
-    }, 1000);
+          return { ...prev, elapsedSeconds: elapsed, remainingSeconds: remaining };
+        });
+      }, 1000);
 
     console.log('⏰ Timer interval set');
     setTimerInterval(interval);
@@ -731,7 +717,7 @@ export default function ChatRoom({ route }) {
         clearInterval(interval);
       }
     };
-  }, [timerInterval, minEndTimeMinutes, handleTimeUp]);
+  }, [handleTimeUp]);
 
     // Add this cleanup useEffect
     useEffect(() => {
@@ -798,48 +784,47 @@ export default function ChatRoom({ route }) {
 
   // Fetch debate timer from server
   const fetchDebateTimer = useCallback(async () => {
-    // Add debouncing or flag to prevent multiple calls
-    if (loadingTimer) return;
+    // ✅ Debounce: Only allow fetches every 2 seconds
+    const now = Date.now();
+    if (now - lastTimerFetch.current < 2000) {
+      return;
+    }
+    lastTimerFetch.current = now;
+
+    // ✅ Cancel previous fetch
+    if (fetchTimerAbortController.current) {
+      fetchTimerAbortController.current.abort();
+    }
+
+    const controller = new AbortController();
+    fetchTimerAbortController.current = controller;
 
     try {
-      setLoadingTimer(true);
-      console.log('🕒 Fetching debate timer for room:', roomId);
-      const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/timer`);
+      const response = await axios.get(
+        `${SERVER_URL}/api/debate/${roomId}/timer`,
+        { signal: controller.signal }
+      );
 
       if (response.data.success) {
-        const { elapsedSeconds, totalDuration, startTime, isActive, remainingSeconds } = response.data;
-
-        // Only update if values are different
-        setDebateTimer(prev => {
-          const newTimer = {
-            elapsedSeconds: elapsedSeconds || 0,
-            totalDuration: totalDuration || 1800,
-            isActive: isActive || false,
-            startTime: startTime ? new Date(startTime) : null,
-            remainingSeconds: remainingSeconds || Math.max(0, (totalDuration || 1800) - (elapsedSeconds || 0)),
-          };
-
-          // Start local timer only if active and not already running
-          if (isActive && (remainingSeconds > 0 || totalDuration - elapsedSeconds > 0)) {
-            if (!timerInterval) {
-              console.log('⏰ Starting local timer from server data');
-              startDebateTimer(totalDuration);
-            }
-          } else if (timerInterval) {
-            // Clear timer if debate is not active
-            clearInterval(timerInterval);
-            setTimerInterval(null);
-          }
-
-          return newTimer;
+        setDebateTimer({
+          elapsedSeconds: response.data.elapsedSeconds || 0,
+          totalDuration: response.data.totalDuration || 1800,
+          isActive: response.data.isActive || false,
+          startTime: response.data.startTime ? new Date(response.data.startTime) : null,
+          remainingSeconds: response.data.remainingSeconds || 0,
         });
+
+        // Only start timer if active and not already running
+        if (response.data.isActive && !timerIntervalRef.current) {
+          startDebateTimer(response.data.totalDuration);
+        }
       }
     } catch (error) {
-      console.error('Error fetching debate timer:', error);
-    } finally {
-      setLoadingTimer(false);
+      if (error.name !== 'AbortError') {
+        console.error('Timer fetch error:', error);
+      }
     }
-  }, [roomId, timerInterval, startDebateTimer]);
+  }, [roomId, startDebateTimer]);
 
   const checkRoomStatus = async () => {
     try {
@@ -960,6 +945,22 @@ useEffect(() => {
   if (!socketRef.current) return;
 
   const socket = socketRef.current;
+  const handleTimerStarted = (data) => {
+      if (data.roomId === roomId) {
+        fetchDebateTimer();
+      }
+    };
+
+    const handleTimerUpdate = (data) => {
+      if (data.roomId === roomId) {
+        setDebateTimer(prev => ({
+          ...prev,
+          elapsedSeconds: data.elapsedSeconds || 0,
+          remainingSeconds: data.remainingSeconds || 0,
+        }));
+      }
+    };
+
   const setupSocketListeners = () => {
       console.log('🔧 Setting up socket listeners for debate events');
 
@@ -1010,35 +1011,9 @@ useEffect(() => {
         }
       });
 
-      socket.on('debate_timer_started', (data) => {
-          console.log('⏰ Timer started via socket:', data);
-          if (data.roomId === roomId) {
-            // Don't fetch immediately, let server handle sync
-            setTimeout(() => fetchDebateTimer(), 1000); // Delay to avoid race
-          }
-        });
+      socket.on('debate_timer_started', handleTimerStarted);
 
-        socket.on('debate_timer_update', (data) => {
-          console.log('⏰ Timer update via socket:', data);
-          if (data.roomId === roomId) {
-            // Update state directly without starting new timer
-            setDebateTimer(prev => ({
-              ...prev,
-              elapsedSeconds: data.elapsedSeconds || 0,
-              totalDuration: data.totalDuration || 1800,
-              isActive: data.isActive || false,
-              startTime: data.startTime ? new Date(data.startTime) : null,
-              remainingSeconds: data.remainingSeconds || 0,
-            }));
-
-            // Only update canEndDebate, don't start timer
-            const minEndTimeSeconds = minEndTimeMinutes * 60;
-            const canEnd = data.elapsedSeconds >= minEndTimeSeconds;
-            if (canEnd !== canEndDebate) {
-              setCanEndDebate(canEnd);
-            }
-          }
-        });
+      socket.on('debate_timer_update', handleTimerUpdate);
 
       socket.on('room_closed', (data) => {
         console.log('🚫 Room closed:', data);
@@ -1065,8 +1040,8 @@ useEffect(() => {
     socket.off('argument_evaluated');
     socket.off('scoreboard_updated');
     socket.off('debate_settings_updated');
-    socket.off('debate_timer_started') ;
-    socket.off("debater_timer_update");
+    socket.off('debate_timer_started', handleTimerStarted) ;
+    socket.off("debater_timer_update", handleTimerUpdate);
     socket.off('room_closed');
   };
 }, [roomId,userId,fetchScoreboard,handleDebateEnded,navigation,minEndTimeMinutes ,canEndDebate]);
@@ -1403,7 +1378,15 @@ const endDebate = useCallback(async () => {
 
     socketRef.current = io(SERVER_URL, {
       transports: ['websocket'],
-      timeout: 10000,
+      timeout: 30000, // ✅ Increased to 30 seconds
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 10, // ✅ More attempts
+      autoConnect: true,
+      forceNew: false, // ✅ Reuse existing connection
+      pingTimeout: 60000, // ✅ Keep connection alive longer
+      pingInterval: 25000, // ✅ Ping every 25 seconds
     });
 
     socketRef.current.on('connect', () => {
@@ -1680,7 +1663,7 @@ const endDebate = useCallback(async () => {
       socketRef.current.emit('send_message', messageData, async (ack) => {
         console.log('Server ACK:', ack);
 
-        if (!socketRef.current) {
+        if (!socketRef.current?.connected) {
           console.error('Socket lost during ACK processing');
           return;
         }

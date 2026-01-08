@@ -89,7 +89,7 @@ io.on("connection", (socket) => {
 
   socket.on('join_room', async (roomId) => {
 
-
+    socket.join(roomId);
     const room = await Room.findOne({ roomId }) ;
 
     if (!room || !room.isActive){
@@ -124,7 +124,7 @@ io.on("connection", (socket) => {
           remainingSeconds: Math.max(0, totalDuration - elapsedSeconds)
         });
       }
-    socket.join(roomId);
+
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
     try {
