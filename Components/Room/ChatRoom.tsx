@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef , useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,15 @@ import {
   Alert,
   StatusBar,
   Modal,
-  Animated,
   ScrollView,
   ToastAndroid
 } from 'react-native';
-import io from 'socket.io-client' ;
+import io from 'socket.io-client';
 import { useUser } from "../../Contexts/UserContext";
 import { useRoute } from '@react-navigation/native';
 import AIDetectionService from '../services/AIDetectionService';
 import AIContentWarning from '../warning/AIContentWarning';
 import { useNavigation } from '@react-navigation/native';
-
 import axios from 'axios';
 
 const SERVER_URL = 'https://debatesphere-11.onrender.com';
@@ -56,12 +54,10 @@ const StanceSelectionModal = ({
 
   const handleStanceSelect = async (stance) => {
     if (loading) return;
-
     setSelectedStance(stance);
     setLoading(true);
 
     try {
-      // Save stance to backend
       const response = await fetch('https://debatesphere-11.onrender.com/api/save_user_stance', {
         method: 'POST',
         headers: {
@@ -98,7 +94,7 @@ const StanceSelectionModal = ({
       animationType="slide"
       transparent={true}
       visible={visible}
-      onRequestClose={() => {}} // Prevent closing by back button
+      onRequestClose={() => {}}
     >
       <View style={stanceStyles.modalOverlay}>
         <View style={stanceStyles.modalContent}>
@@ -151,183 +147,41 @@ const StanceSelectionModal = ({
   );
 };
 
-// Styles for the stance modal
-const stanceStyles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 24,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  stancesContainer: {
-    gap: 16,
-    marginBottom: 24,
-  },
-  stanceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 2,
-    backgroundColor: '#f8fafc',
-    borderColor: '#e2e8f0',
-  },
-  stanceButtonSelected: {
-    backgroundColor: '#f1f5f9',
-    transform: [{ scale: 1.02 }],
-  },
-  stanceEmoji: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  emojiText: {
-    fontSize: 20,
-  },
-  stanceLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1e293b',
-    flex: 1,
-  },
-  stanceLabelSelected: {
-    fontWeight: '700',
-  },
-  loading: {
-    marginLeft: 8,
-  },
-  warning: {
-    backgroundColor: '#fffbeb',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fcd34d',
-  },
-  warningText: {
-    color: '#92400e',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-});
-
-function ImageUploader({ onImageSelected, disabled }) {
-  const fileInputRef = useRef(null);
-
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        Alert.alert('Error', 'Image size must be less than 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64Image = reader.result;
-        onImageSelected(base64Image);
-      };
-      reader.onerror = () => {
-        Alert.alert('Error', 'Failed to read image');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleMobileImagePicker = async () => {
-    Alert.alert(
-      'Image Picker',
-      'Mobile image picking not implemented. Please use web for testing or integrate a native image picker.',
-      [{ text: 'OK' }]
-    );
-  };
-
-  return (
-    <View style={styles.uploaderContainer}>
-      {Platform.OS === 'web' ? (
-        <>
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            onChange={handleFileChange}
-          />
-          <TouchableOpacity
-            style={[styles.uploadBtn, disabled && styles.uploadBtnDisabled]}
-            onPress={() => fileInputRef.current.click()}
-            disabled={disabled}
-          >
-            <Text style={styles.uploadBtnText}>📷</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <TouchableOpacity
-          style={[styles.uploadBtn, disabled && styles.uploadBtnDisabled]}
-          onPress={handleMobileImagePicker}
-          disabled={disabled}
-        >
-          <Text style={styles.uploadBtnText}>📷</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-// Function to get user image source
-const getUserImageSource = (userImage) => {
-  if (!userImage) {
-    return defaultImages[0].source;
-  }
-
-  // Check if it's a default image
-  const defaultImage = defaultImages.find(img => img.id === userImage);
-  if (defaultImage) {
-    return defaultImage.source;
-  }
-
-  // Fallback to first default image
-  return defaultImages[0].source;
-};
-
-// Move this COMPLETELY outside the ChatRoom component, before "export default function ChatRoom"
-const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId, winner }) => {
+// Scoreboard Modal Component
+const ScoreboardModal = ({
+  visible,
+  onClose,
+  scores,
+  leaderboard,
+  roomId,
+  userId,
+  winner,
+  debateStatus,
+  canEndDebate,
+  endDebate,
+  loadingScoreboard,
+  fetchScoreboard,
+  debateSettings,
+  setDebateSettings,
+  updateDebateSettings
+}) => {
   const [activeTab, setActiveTab] = useState('scores');
 
-  // Remove the debateSettings state from here since it's in parent
-  // Just use the props passed from parent
+  if (loadingScoreboard) {
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+      >
+        <View style={scoreboardStyles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#667eea" />
+          <Text style={scoreboardStyles.loadingText}>Loading scoreboard...</Text>
+        </View>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -339,10 +193,37 @@ const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId
       <View style={scoreboardStyles.modalOverlay}>
         <View style={scoreboardStyles.modalContent}>
           <View style={scoreboardStyles.header}>
-            <Text style={scoreboardStyles.title}>🏆 Debate Scoreboard</Text>
-            <TouchableOpacity onPress={onClose} style={scoreboardStyles.closeButton}>
-              <Text style={scoreboardStyles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
+            <Text style={scoreboardStyles.title}>
+              {debateStatus === 'ended' ? '🏆 Debate Results' : '📊 Debate Scoreboard'}
+            </Text>
+            <View style={scoreboardStyles.headerButtons}>
+              <TouchableOpacity
+                style={scoreboardStyles.refreshButton}
+                onPress={fetchScoreboard}
+                disabled={loadingScoreboard}
+              >
+                {loadingScoreboard ? (
+                  <ActivityIndicator size="small" color="#667eea" />
+                ) : (
+                  <Text style={scoreboardStyles.refreshButtonText}>🔄</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} style={scoreboardStyles.closeButton}>
+                <Text style={scoreboardStyles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={scoreboardStyles.statusBanner}>
+            <Text style={[
+              scoreboardStyles.statusText,
+              debateStatus === 'ended' ? scoreboardStyles.statusEnded : scoreboardStyles.statusActive
+            ]}>
+              {debateStatus === 'ended' ? '🏁 DEBATE ENDED' : '⚡ DEBATE ACTIVE'}
+            </Text>
+            {winner && winner !== 'undecided' && (
+              <Text style={scoreboardStyles.winnerText}>Winner: {winner}</Text>
+            )}
           </View>
 
           <View style={scoreboardStyles.tabContainer}>
@@ -446,93 +327,71 @@ const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId
           )}
 
           {activeTab === 'settings' && (
-            <ScoreboardSettingsTab
-              debateSettings={debateSettings}
-              setDebateSettings={setDebateSettings}
-              updateDebateSettings={updateDebateSettings}
-            />
+            <ScrollView style={scoreboardStyles.content}>
+              <Text style={scoreboardStyles.sectionTitle}>Debate Settings</Text>
+
+              <View style={scoreboardStyles.settingItem}>
+                <Text style={scoreboardStyles.settingLabel}>Minimum Arguments per Team</Text>
+                <TextInput
+                  style={scoreboardStyles.settingInput}
+                  value={debateSettings.minArgumentsPerTeam.toString()}
+                  onChangeText={(text) => setDebateSettings({
+                    ...debateSettings,
+                    minArgumentsPerTeam: parseInt(text) || 3
+                  })}
+                  keyboardType="numeric"
+                />
+                <Text style={scoreboardStyles.settingDescription}>
+                  Minimum arguments required from each team to declare a winner
+                </Text>
+              </View>
+
+              <View style={scoreboardStyles.settingItem}>
+                <Text style={scoreboardStyles.settingLabel}>Win Margin Threshold (%)</Text>
+                <TextInput
+                  style={scoreboardStyles.settingInput}
+                  value={debateSettings.winMarginThreshold.toString()}
+                  onChangeText={(text) => setDebateSettings({
+                    ...debateSettings,
+                    winMarginThreshold: parseInt(text) || 10
+                  })}
+                  keyboardType="numeric"
+                />
+                <Text style={scoreboardStyles.settingDescription}>
+                  Minimum percentage difference needed to declare a clear winner
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={scoreboardStyles.saveButton}
+                onPress={updateDebateSettings}
+              >
+                <Text style={scoreboardStyles.saveButtonText}>Save Settings</Text>
+              </TouchableOpacity>
+            </ScrollView>
           )}
 
-          <TouchableOpacity
-            style={[
-              scoreboardStyles.endDebateButton,
-              !canEndDebate && scoreboardStyles.endDebateButtonDisabled
-            ]}
-            onPress={endDebate}
-            disabled={!canEndDebate}
-          >
-            <Text style={scoreboardStyles.endDebateButtonText}>
-              {canEndDebate ? 'End Debate Now' : `Wait ${Math.ceil((minEndTimeMinutes * 60 - debateTimer.elapsedSeconds) / 60)}m to End`}
-            </Text>
-          </TouchableOpacity>
+          {debateStatus !== 'ended' && (
+            <TouchableOpacity
+              style={[
+                scoreboardStyles.endDebateButton,
+                !canEndDebate.canEnd && scoreboardStyles.endDebateButtonDisabled
+              ]}
+              onPress={endDebate}
+              disabled={!canEndDebate.canEnd}
+            >
+              <Text style={scoreboardStyles.endDebateButtonText}>
+                {canEndDebate.canEnd ? 'End Debate Now' : canEndDebate.reason}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>
   );
 };
 
-// Add a separate component for the settings tab
-const ScoreboardSettingsTab = ({ debateSettings, setDebateSettings, updateDebateSettings }) => {
-  const [tempSettings, setTempSettings] = useState(debateSettings);
-
-  const handleSave = () => {
-    setDebateSettings(tempSettings);
-    updateDebateSettings();
-  };
-
-  return (
-    <ScrollView style={scoreboardStyles.content}>
-      <Text style={scoreboardStyles.sectionTitle}>Debate Settings</Text>
-
-      <View style={scoreboardStyles.settingItem}>
-        <Text style={scoreboardStyles.settingLabel}>Max Duration (minutes)</Text>
-        <TextInput
-          style={scoreboardStyles.settingInput}
-          value={tempSettings.maxDuration.toString()}
-          onChangeText={(text) => setTempSettings({
-            ...tempSettings,
-            maxDuration: parseInt(text) || 30
-          })}
-          keyboardType="numeric"
-        />
-      </View>
-
-      <View style={scoreboardStyles.settingItem}>
-        <Text style={scoreboardStyles.settingLabel}>Max Arguments</Text>
-        <TextInput
-          style={scoreboardStyles.settingInput}
-          value={tempSettings.maxArguments.toString()}
-          onChangeText={(text) => setTempSettings({
-            ...tempSettings,
-            maxArguments: parseInt(text) || 50
-          })}
-          keyboardType="numeric"
-        />
-      </View>
-
-      <View style={scoreboardStyles.settingItem}>
-        <Text style={scoreboardStyles.settingLabel}>Win Margin Threshold (%)</Text>
-        <TextInput
-          style={scoreboardStyles.settingInput}
-          value={tempSettings.winMarginThreshold.toString()}
-          onChangeText={(text) => setTempSettings({
-            ...tempSettings,
-            winMarginThreshold: parseInt(text) || 10
-          })}
-          keyboardType="numeric"
-        />
-      </View>
-
-      <TouchableOpacity
-        style={scoreboardStyles.saveButton}
-        onPress={handleSave}
-      >
-        <Text style={scoreboardStyles.saveButtonText}>Save Settings</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-};
-
+// Main ChatRoom Component
 export default function ChatRoom({ route }) {
   const socketRef = useRef(null);
   const flatListRef = useRef(null);
@@ -546,79 +405,62 @@ export default function ChatRoom({ route }) {
   const [aiWarningVisible, setAiWarningVisible] = useState(false);
   const [pendingMessage, setPendingMessage] = useState(null);
   const [userAIScore, setUserAIScore] = useState(0);
-  const fetchTimerAbortController = useRef(null);
-  const lastTimerFetch = useRef(0);
-  const navigation = useNavigation();
-  const [debateTimer, setDebateTimer] = useState({
-      elapsedSeconds: 0,
-      totalDuration: 1800, // 30 minutes in seconds (default)
-      isActive: false,
-      startTime: null,
-      remainingSeconds: 0,
-    });
-  const [minEndTimeMinutes] = useState(5); // Minimum 5 minutes before debate can be ended
-  const [canEndDebate, setCanEndDebate] = useState(false);
-  const [timerInterval, setTimerInterval] = useState(null);
-  const timerIntervalRef = useRef(null);
-  // Add this to your state
-  const [loadingScoreboard, setLoadingScoreboard] = useState(false);
   const [consecutiveAIDetections, setConsecutiveAIDetections] = useState(0);
   const [userImages, setUserImages] = useState({});
-  // In your ChatRoom component's state
   const [messageEvaluation, setMessageEvaluation] = useState(null);
-  const [loadingTimer, setLoadingTimer] = useState(false);
+
   // Stance-related state
   const [showStanceModal, setShowStanceModal] = useState(false);
   const [userStance, setUserStance] = useState(null);
   const [hasCheckedStance, setHasCheckedStance] = useState(false);
   const [roomStances, setRoomStances] = useState({});
+
+  // Debate management state
   const [debateScores, setDebateScores] = useState({
     favor: { total: 0, count: 0, average: 0, participants: 0 },
     against: { total: 0, count: 0, average: 0, participants: 0 },
     neutral: { total: 0, count: 0, average: 0, participants: 0 }
   });
   const [canSendMessages, setCanSendMessages] = useState(true);
-  const [roomStatus, setRoomStatus] = useState({
-    isActive: true,
-    isEnded: false,
-    winner: null,
-  });
+  const [debateStatus, setDebateStatus] = useState('active'); // 'active' or 'ended'
   const [winner, setWinner] = useState(null);
   const [showScoreboard, setShowScoreboard] = useState(false);
-  const [debateEnded, setDebateEnded] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [loadingScoreboard, setLoadingScoreboard] = useState(false);
   const [debateSettings, setDebateSettings] = useState({
-    maxDuration: 30, // minutes
-    maxArguments: 50,
+    minArgumentsPerTeam: 3,
     winMarginThreshold: 10
   });
-
+  const [canEndDebate, setCanEndDebate] = useState({
+    canEnd: false,
+    reason: 'Checking requirements...'
+  });
 
   const { roomId, title, desc } = route.params;
   const { user } = useUser();
-
   const username = user?.username || 'Guest';
   const userId = user?.id || '';
   const userImage = user?.user_image || '';
-  console.log("User Data at ChatRoom is " + user);
-  // Animation values
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const navigation = useNavigation();
 
-  // Stance color and label mapping with text colors
+  // Animation values
+//   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Stance color and label mapping
   const stanceColors = {
     against: {
       background: '#ef4444',
-      text: '#ff6b35', // Orange text color for Against
+      text: '#ff6b35',
       light: '#fef2f2'
     },
     favor: {
       background: '#10b981',
-      text: '#8b5cf6', // Purple text color for Favor
+      text: '#8b5cf6',
       light: '#f0fdf4'
     },
     neutral: {
       background: '#6b7280',
-      text: '#4b5563', // Gray text color for Neutral
+      text: '#4b5563',
       light: '#f9fafb'
     }
   };
@@ -629,279 +471,193 @@ export default function ChatRoom({ route }) {
     neutral: 'Neutral'
   };
 
-  // Function to get text color based on stance
-  const getStanceTextColor = (stance) => {
-    if (!stance) return '#1e293b'; // Default text color
-
-    const stanceData = stanceColors[stance];
-    return stanceData ? stanceData.text : '#1e293b';
-  };
-  // Add this debounce function
-  const useDebounce = (value, delay) => {
-    const [debouncedValue, setDebouncedValue] = useState(value);
-
-    useEffect(() => {
-      const handler = setTimeout(() => {
-        setDebouncedValue(value);
-      }, delay);
-
-      return () => {
-        clearTimeout(handler);
-      };
-    }, [value, delay]);
-
-    return debouncedValue;
-  };
-    const debouncedTimerUpdate = useDebounce(debateTimer, 1000);
-  // Function to get background color based on stance
-  const getStanceBackgroundColor = (stance) => {
-    if (!stance) return '#f8fafc'; // Default background
-
-    const stanceData = stanceColors[stance];
-    return stanceData ? stanceData.light : '#f8fafc';
-  };
-
-
-  // Start the debate timer
-  const startDebateTimer = useCallback((totalDuration = 1800) => {
-    console.log('⏰ Starting debate timer:', totalDuration);
-
-    if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-     }
-
-
-    const startTime = new Date();
-    setDebateTimer(prev => ({
-      ...prev,
-      startTime,
-      totalDuration,
-      isActive: true,
-      elapsedSeconds: 0,
-      remainingSeconds: totalDuration,
-    }));
-
-    // Create new interval
-    const interval = setInterval(() => {
-        setDebateTimer(prev => {
-          if (!prev.isActive) {
-            // Clean up if not active
-            if (timerIntervalRef.current) {
-              clearInterval(timerIntervalRef.current);
-              timerIntervalRef.current = null;
-            }
-            return prev;
-          }
-
-          const now = new Date();
-          const elapsed = Math.floor((now - prev.startTime) / 1000);
-          const remaining = Math.max(0, prev.totalDuration - elapsed);
-
-          if (remaining <= 0) {
-            clearInterval(timerIntervalRef.current);
-            timerIntervalRef.current = null;
-            handleTimeUp();
-          }
-
-          return { ...prev, elapsedSeconds: elapsed, remainingSeconds: remaining };
-        });
-      }, 1000);
-
-    console.log('⏰ Timer interval set');
-    setTimerInterval(interval);
-
-    // Return cleanup function
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [handleTimeUp]);
-
-    // Add this cleanup useEffect
-    useEffect(() => {
-      return () => {
-        // Clean up timer interval
-        if (timerInterval) {
-          clearInterval(timerInterval);
-        }
-
-        // Clean up socket connection
-        if (socketRef.current) {
-          socketRef.current.disconnect();
-          socketRef.current = null;
-        }
-      };
-    }, [timerInterval]);
-  const handleTimeUp = useCallback(async () => {
-    console.log('⏰ Debate time is up! Auto-ending...');
-
-    // Clear the timer interval
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      setTimerInterval(null);
+  // Function to get user image source
+  const getUserImageSource = (userImage) => {
+    if (!userImage) {
+      return defaultImages[0].source;
     }
+    const defaultImage = defaultImages.find(img => img.id === userImage);
+    if (defaultImage) {
+      return defaultImage.source;
+    }
+    return defaultImages[0].source;
+  };
 
-    Alert.alert(
-      'Time\'s Up!',
-      'The debate duration has ended. Calculating results...',
-      [{ text: 'OK' }]
-    );
-
-    // Auto-end the debate
+  // Check debate endability
+  const checkDebateEndability = useCallback(async () => {
     try {
-      const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
-        userId: userId,
-        reason: 'Time expired'
+      const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/can-end`, {
+        userId
       });
 
       if (response.data.success) {
-        console.log('✅ Debate auto-ended successfully');
+        setCanEndDebate({
+          canEnd: response.data.canEnd,
+          reason: response.data.reason,
+          teamStats: response.data.teamStats,
+          totalArguments: response.data.totalArguments
+        });
       }
     } catch (error) {
-      console.error('Error auto-ending debate:', error);
+      console.error('Error checking debate endability:', error);
+      setCanEndDebate({
+        canEnd: false,
+        reason: 'Error checking requirements'
+      });
     }
-  }, [roomId, userId, timerInterval]); // Add timerInterval to dependencies
+  }, [roomId, userId]);
 
-  // Format time display
-  const formatTime = (seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+  // End debate function
+  const endDebate = useCallback(async () => {
+    Alert.alert(
+      'End Debate',
+      'Are you sure you want to end this debate? This will calculate the final winner.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End Debate',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
+                userId: userId,
+                reason: 'User requested end'
+              });
 
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+              if (response.data.success) {
+                setDebateStatus('ended');
+                setCanSendMessages(false);
+                setWinner(response.data.winner || 'undecided');
 
-  // Calculate progress percentage
-  const calculateProgress = () => {
-    if (debateTimer.totalDuration <= 0) return 0;
-    return Math.min(100, (debateTimer.elapsedSeconds / debateTimer.totalDuration) * 100);
-  };
-
-  // Fetch debate timer from server
-  const fetchDebateTimer = useCallback(async () => {
-    // ✅ Debounce: Only allow fetches every 2 seconds
-    const now = Date.now();
-    if (now - lastTimerFetch.current < 2000) {
-      return;
-    }
-    lastTimerFetch.current = now;
-
-    // ✅ Cancel previous fetch
-    if (fetchTimerAbortController.current) {
-      fetchTimerAbortController.current.abort();
-    }
-
-    const controller = new AbortController();
-    fetchTimerAbortController.current = controller;
-
-    try {
-      const response = await axios.get(
-        `${SERVER_URL}/api/debate/${roomId}/timer`,
-        { signal: controller.signal }
-      );
-
-      if (response.data.success) {
-        setDebateTimer({
-          elapsedSeconds: response.data.elapsedSeconds || 0,
-          totalDuration: response.data.totalDuration || 1800,
-          isActive: response.data.isActive || false,
-          startTime: response.data.startTime ? new Date(response.data.startTime) : null,
-          remainingSeconds: response.data.remainingSeconds || 0,
-        });
-
-        // Only start timer if active and not already running
-        if (response.data.isActive && !timerIntervalRef.current) {
-          startDebateTimer(response.data.totalDuration);
-        }
-      }
-    } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error('Timer fetch error:', error);
-      }
-    }
-  }, [roomId, startDebateTimer]);
-
-  const checkRoomStatus = async () => {
-    try {
-      const response = await axios.get(
-        `https://debatesphere-11.onrender.com/api/debate/${roomId}/scoreboard`
-      );
-
-      if (response.data.success) {
-        const { debateStatus, winner } = response.data;
-        const isEnded = debateStatus === 'ended';
-        const isNotStarted = debateStatus === 'not_started';
-
-        setRoomStatus({
-          isActive: !isEnded,
-          isEnded,
-          isNotStarted,
-          winner
-        });
-
-        // If room is ended, show alert and optionally navigate back
-        if (isEnded) {
-            setCanSendMessages(false);
-          Alert.alert(
-            'Debate Ended',
-            `This debate has ended. Winner: ${winner !== 'undecided' ? winner : 'No clear winner'}`,
-            [
-              {
-                text: 'View Results',
-                onPress: () => {
-                  // Navigate to results page or show results
-                  navigation.navigate('DebateResults', { roomId });
+                if (response.data.stats) {
+                  setDebateScores(response.data.stats);
                 }
-              },
-              {
-                text: 'Go Back',
-                onPress: () => navigation.goBack(),
-                style: 'cancel'
-              }
-            ]
-          );
 
-          // Enable message sending if debate is active
-          if (!isEnded && !isNotStarted) {
-              setCanSendMessages(true);
+                fetchScoreboard();
+
+                Alert.alert(
+                  'Success!',
+                  `Debate ended successfully!\nWinner: ${(response.data.winner || 'undecided').toUpperCase()}`,
+                  [
+                    {
+                      text: 'View Results',
+                      onPress: () => {
+                        navigation.navigate('DebateResults', {
+                          roomId,
+                          winner: response.data.winner || 'undecided',
+                          scores: response.data.stats || debateScores,
+                          leaderboard: leaderboard,
+                          title: title,
+                          desc: desc
+                        });
+                      }
+                    },
+                    {
+                      text: 'Stay in Room',
+                      style: 'cancel'
+                    }
+                  ]
+                );
+              } else {
+                Alert.alert('Error', response.data.error || 'Failed to end debate');
+              }
+            } catch (error) {
+              Alert.alert('Error', error.response?.data?.error || 'Failed to end debate');
+            }
           }
         }
-        if (isNotStarted) {
-                console.log('Debate not started yet - waiting for first argument');
-        }
+      ]
+    );
+  }, [roomId, userId, navigation, title, desc, debateScores, leaderboard, fetchScoreboard]);
+
+  // Update debate settings
+  const updateDebateSettings = async () => {
+    try {
+      const response = await axios.put(`${SERVER_URL}/api/debate/${roomId}/settings`, {
+        userId: userId,
+        settings: debateSettings
+      });
+
+      if (response.data.success) {
+        Alert.alert('Success', 'Debate settings updated');
       }
     } catch (error) {
-      console.error('Error checking room status:', error);
+      console.error('Error updating settings:', error);
+      Alert.alert('Error', 'Failed to update settings');
     }
   };
 
+  // Fetch scoreboard data
+  const fetchScoreboard = useCallback(async () => {
+    try {
+      setLoadingScoreboard(true);
+      const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
 
-const handleDebateEnded = useCallback((data) => {
+      if (response.data.success) {
+        setLeaderboard(response.data.leaderboard || []);
+
+        if (response.data.standings) {
+          setDebateScores(response.data.standings);
+        }
+
+        if (response.data.status === 'ended') {
+          setDebateStatus('ended');
+          setCanSendMessages(false);
+        }
+
+        if (response.data.winner && response.data.winner !== 'undecided') {
+          setWinner(response.data.winner);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching scoreboard:', error);
+      setLeaderboard([]);
+    } finally {
+      setLoadingScoreboard(false);
+    }
+  }, [roomId]);
+
+  // Check debate status
+  const checkDebateStatus = useCallback(async () => {
+    try {
+      const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/status`);
+
+      if (response.data.success) {
+        setDebateStatus(response.data.status);
+
+        if (response.data.status === 'ended') {
+          setCanSendMessages(false);
+          setWinner(response.data.winner);
+        }
+
+        // Update canEndDebate state
+        setCanEndDebate({
+          canEnd: response.data.canEnd,
+          reason: response.data.requirements ?
+            `Need ${response.data.requirements.minTeams} teams with ${response.data.requirements.minArgumentsPerTeam} arguments each` :
+            'Checking requirements...'
+        });
+      }
+    } catch (error) {
+      console.error('Error checking debate status:', error);
+    }
+  }, [roomId]);
+
+  // Handle debate ended event
+  const handleDebateEnded = useCallback((data) => {
     console.log('🏆 DEBATE ENDED EVENT RECEIVED:', data);
 
     if (data.roomId === roomId) {
-      console.log('✅ This debate ended is for our room:', roomId);
-
-      setWinner(data.winner || 'undecided');
-      setDebateEnded(true);
+      setDebateStatus('ended');
       setCanSendMessages(false);
+      setWinner(data.winner || 'undecided');
 
       if (data.stats) {
         setDebateScores(data.stats);
       }
 
-      // Refresh scoreboard to get final results
       fetchScoreboard();
 
-      // Show winner modal
-      showWinnerModal(data);
-
-      // Alert user immediately
       Alert.alert(
         '🏆 Debate Concluded!',
         `The debate has ended.\nWinner: ${(data.winner || 'undecided').toUpperCase()}`,
@@ -921,394 +677,14 @@ const handleDebateEnded = useCallback((data) => {
           },
           {
             text: 'OK',
-            onPress: () => {
-              // Optional: Auto-navigate after delay
-              setTimeout(() => {
-                navigation.navigate('DebateResults', {
-                  roomId,
-                  winner: data.winner || 'undecided',
-                  scores: data.stats || debateScores,
-                  leaderboard: leaderboard,
-                  title: title,
-                  desc: desc
-                });
-              }, 3000);
-            }
+            style: 'cancel'
           }
         ]
       );
     }
-  }, [roomId, navigation, title, desc, debateScores, leaderboard, fetchScoreboard]);
+  }, [roomId, navigation, title, desc, fetchScoreboard]);
 
-
-useEffect(() => {
-  if (!socketRef.current) return;
-
-  const socket = socketRef.current;
-  const handleTimerStarted = (data) => {
-      if (data.roomId === roomId) {
-        fetchDebateTimer();
-      }
-    };
-
-    const handleTimerUpdate = (data) => {
-      if (data.roomId === roomId) {
-        setDebateTimer(prev => ({
-          ...prev,
-          elapsedSeconds: data.elapsedSeconds || 0,
-          remainingSeconds: data.remainingSeconds || 0,
-        }));
-      }
-    };
-
-  const setupSocketListeners = () => {
-      console.log('🔧 Setting up socket listeners for debate events');
-
-      socket.on('score_updated', (data) => {
-        console.log('📊 Score updated:', data);
-        if (data.roomId === roomId) {
-          setDebateScores(data.teamScores);
-        }
-      });
-
-      socket.on('debate_ended', (data) => {
-        console.log('🏆 Debate ended event received:', data);
-        handleDebateEnded(data);
-      });
-
-      socket.on('argument_evaluated', (data) => {
-        console.log('📝 Argument evaluated:', data);
-        if (data.roomId === roomId && data.userId !== userId) {
-          if (Platform.OS === 'android') {
-            ToastAndroid.show(
-              `${data.username}'s argument scored ${data.totalScore} points`,
-              ToastAndroid.SHORT
-            );
-          } else {
-            // For iOS/web, use Alert or other notification
-            console.log(`${data.username}'s argument scored ${data.totalScore} points`);
-          }
-        }
-      });
-
-      socket.on('scoreboard_updated', (data) => {
-        console.log('📈 Scoreboard updated:', data);
-        if (data.roomId === roomId && data.leaderboard) {
-          setLeaderboard(data.leaderboard);
-          if (data.standings) {
-            setDebateScores(data.standings);
-          }
-          if (data.winner) {
-            setWinner(data.winner);
-          }
-        }
-      });
-
-      socket.on('debate_settings_updated', (data) => {
-        console.log('⚙️ Debate settings updated:', data);
-        if (data.roomId === roomId) {
-          fetchScoreboard();
-        }
-      });
-
-      socket.on('debate_timer_started', handleTimerStarted);
-
-      socket.on('debate_timer_update', handleTimerUpdate);
-
-      socket.on('room_closed', (data) => {
-        console.log('🚫 Room closed:', data);
-        if (data.roomId === roomId) {
-          Alert.alert(
-            'Room Closed',
-            data.message || 'This room has been closed',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
-        }
-      });
-    };
-
-    // Call the setup function
-    setupSocketListeners();
-
-    // Also set up initial room status check
-    checkRoomStatus();
-
-
-  return () => {
-    socket.off('score_updated');
-    socket.off('debate_ended');
-    socket.off('argument_evaluated');
-    socket.off('scoreboard_updated');
-    socket.off('debate_settings_updated');
-    socket.off('debate_timer_started', handleTimerStarted) ;
-    socket.off("debater_timer_update", handleTimerUpdate);
-    socket.off('room_closed');
-  };
-}, [roomId,userId,fetchScoreboard,handleDebateEnded,navigation,minEndTimeMinutes ,canEndDebate]);
-
-// Update handleMessage function
-const handleMessage = async () => {
-
-
-  if (!canSendMessages) {
-      Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
-      return;
-    }
-
-  if (!text.trim() || !isConnected || !userStance) {
-    Alert.alert('Error', 'Cannot send empty message or without stance');
-    return;
-  }
-
-  const cleanedText = text
-        .replace(/\n\s*\n\s*\n/g, '\n\n')
-        .replace(/^\s+|\s+$/g, '')
-        .replace(/\s+$/gm, '');
-
-  if (!cleanedText.trim()) {
-    Alert.alert('Error', 'Message cannot be empty');
-    return;
-  }
-
-
-  const tempMessageId =  `temp_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
-  const messageData = {
-    text: cleanedText,
-    image: user?.user_image || '',
-    sender: username,
-    userId: userId,
-    userImage: user?.user_image || '',
-    roomId: roomId,
-    time: new Date().toISOString(),
-    userStance: userStance.id || userStance,
-    stanceLabel: userStance.label || stanceLabels[userStance]
-  };
-
-};
-
-
-const showWinnerModal = (winnerData) => {
-  Alert.alert(
-    '🏆 Debate Concluded!',
-    `Winner: ${winnerData.winner.toUpperCase()}\n` +
-    `Margin of Victory: ${winnerData.margin || 'N/A'}%\n\n` +
-    `Final Scores:\n` +
-    `👍 In Favor: ${debateScores.favor.average?.toFixed(1) || '0.0'} avg\n` +
-    `👎 Against: ${debateScores.against.average?.toFixed(1) || '0.0'} avg\n` +
-    `🤝 Neutral: ${debateScores.neutral.average?.toFixed(1) || '0.0'} avg\n\n` +
-    `${winnerData.awards?.bestArgument ?
-      `Best Argument: ${winnerData.awards.bestArgument.username} (${winnerData.awards.bestArgument.score}pts)` : ''}`,
-    [
-      { text: 'View Details', onPress: () => {
-
-          navigation.navigate('DebateResults', {
-                                                           roomId: roomId,
-             winner: winnerData.winner,
-             scores: debateScores,
-             leaderboard: leaderboard
-          });} },
-      { text: 'Continue Chat' }
-    ]
-  );
-};
-
-
-
-const fetchScoreboard = useCallback(async () => {
-  try {
-    setLoadingScoreboard(true);
-    console.log("Room ID for fetching scoreboard:", roomId);
-    const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/scoreboard`);
-
-    console.log("Scoreboard response:", response.data); // Debug log
-
-    if (response.data.success) {
-      // Make sure to set the leaderboard even if empty array
-      setLeaderboard(response.data.leaderboard || []);
-
-      if (response.data.standings) {
-        setDebateScores(response.data.standings);
-      }
-      if (response.data.debateStatus === 'ended') {
-          setDebateEnded(true);
-      }
-      if (response.data.winner && response.data.winner !== 'undecided') {
-        setWinner(response.data.winner);
-      }
-    }
-  } catch (error) {
-    console.error('Error fetching scoreboard:', error);
-    // Set empty arrays on error to prevent undefined
-    setLeaderboard([]);
-  } finally {
-    setLoadingScoreboard(false);
-  }
-}, [roomId]); // Add useCallback with dependency
-
-const endDebate = useCallback(async () => {
-
-  const minEndTimeSeconds = minEndTimeMinutes * 60;
-
-    if (debateTimer.elapsedSeconds < minEndTimeSeconds && debateTimer.isActive) {
-      const remainingTime = minEndTimeSeconds - debateTimer.elapsedSeconds;
-      const minutes = Math.ceil(remainingTime / 60);
-
-      Alert.alert(
-        'Cannot End Debate Yet',
-        `Debate must run for at least ${minEndTimeMinutes} minutes.\n` +
-        `Please wait ${minutes} more minute${minutes > 1 ? 's' : ''}.`,
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-  Alert.alert(
-    'End Debate',
-    'Are you sure you want to end this debate? This will calculate the final winner.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'End Debate',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-
-            console.log(`🎯 Ending debate for room ${roomId} by user ${userId}`);
-
-            // Clear timer interval first
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                setTimerInterval(null);
-            }
-
-            const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
-              userId: userId,
-              reason: 'User requested end'
-            });
-
-            console.log('End debate API response:', response.data);
-
-            if (response.data.success) {
-
-              setDebateEnded(true);
-              setCanSendMessages(false); // Disable message sending
-              setWinner(response.data.winner || 'undecided');
-              setDebateTimer(prev => ({ ...prev, isActive: false })); // Stop timer
-
-              if (response.data.stats) {
-                  setDebateScores(response.data.stats);
-              }
-              fetchScoreboard();
-              Alert.alert(
-                              'Success!',
-                              `Debate ended successfully!\nWinner: ${(response.data.winner || 'undecided').toUpperCase()}`,
-                              [
-                                {
-                                  text: 'View Results',
-                                  onPress: () => {
-                                    navigation.navigate('DebateResults', {
-                                      roomId,
-                                      winner: response.data.winner || 'undecided',
-                                      scores: response.data.stats || debateScores,
-                                      leaderboard: leaderboard,
-                                      title: title,
-                                      desc: desc
-                                    });
-                                  }
-                                },
-                                {
-                                  text: 'Stay in Room',
-                                  style: 'cancel'
-                                }
-                              ]
-                            );
-            }
-
-            else {
-            Alert.alert('Error',  response.data.error || 'Failed to end debate');
-            }
-          } catch (error) {
-            Alert.alert('Error', error.response?.data?.error || 'Failed to end debate');
-          }
-        }
-      }
-    ]
-  );
-}, [debateTimer.elapsedSeconds, minEndTimeMinutes ,roomId, userId , fetchScoreboard , navigation , title ,desc , debateScores , leaderboard,timerInterval]);
-  // Function to fetch user image by user ID
-
-  useEffect(() => {
-    return () => {
-      // Clean up timer interval
-      if (timerInterval) {
-        console.log('🧹 Cleaning up timer interval on unmount');
-        clearInterval(timerInterval);
-        setTimerInterval(null);
-      }
-
-      // Clean up socket connection
-      if (socketRef.current) {
-        console.log('🧹 Disconnecting socket on unmount');
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-  }, [timerInterval]);
-
-  const fetchUserImageById = async (targetUserId) => {
-    if (!targetUserId) return null;
-
-    try {
-      const response = await fetch(`${SERVER_URL}/api/get_user_by_id`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: targetUserId }),
-      });
-
-      const data = await response.json();
-      if (data.success && data.user) {
-        return data.user.user_image || '';
-      }
-    } catch (error) {
-      console.error('Error fetching user image by ID:', error);
-    }
-
-    return null;
-  };
-
-  // Function to get user image from cache or fetch it
-  const getUserImage = async (messageUserId, messageUsername) => {
-    // Check cache first
-    if (userImages[messageUserId]) {
-      return userImages[messageUserId];
-    }
-
-    // If it's current user, use their image
-    if (messageUserId === userId) {
-      return userImage;
-    }
-
-    // Try to fetch from server
-    try {
-      const fetchedUserImage = await fetchUserImageById(messageUserId);
-      if (fetchedUserImage) {
-        setUserImages(prev => ({
-          ...prev,
-          [messageUserId]: fetchedUserImage
-        }));
-        return fetchedUserImage;
-      }
-    } catch (error) {
-      console.error('Error fetching user image:', error);
-    }
-
-    // Return empty string if not found (not null)
-    return '';
-  };
-
-  // Function to check if user has already selected a stance for this room
+  // Check user stance
   const checkUserStance = async () => {
     if (!userId || !roomId) {
       setHasCheckedStance(true);
@@ -1348,12 +724,11 @@ const endDebate = useCallback(async () => {
     }
   };
 
-  // Function to handle stance selection
+  // Handle stance selection
   const handleStanceSelected = (stance) => {
     setUserStance(stance);
     setShowStanceModal(false);
 
-    // Add user's own stance to room stances
     setRoomStances(prev => ({
       ...prev,
       [userId]: {
@@ -1365,7 +740,6 @@ const endDebate = useCallback(async () => {
       }
     }));
 
-    // Show confirmation
     Alert.alert(
       'Stance Selected!',
       `You are now debating: ${stance.label}`,
@@ -1373,20 +747,21 @@ const endDebate = useCallback(async () => {
     );
   };
 
+  // Socket connection and event handlers
   useEffect(() => {
     setIsConnecting(true);
 
     socketRef.current = io(SERVER_URL, {
       transports: ['websocket'],
-      timeout: 30000, // ✅ Increased to 30 seconds
+      timeout: 30000,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      reconnectionAttempts: 10, // ✅ More attempts
+      reconnectionAttempts: 10,
       autoConnect: true,
-      forceNew: false, // ✅ Reuse existing connection
-      pingTimeout: 60000, // ✅ Keep connection alive longer
-      pingInterval: 25000, // ✅ Ping every 25 seconds
+      forceNew: false,
+      pingTimeout: 60000,
+      pingInterval: 25000,
     });
 
     socketRef.current.on('connect', () => {
@@ -1395,49 +770,19 @@ const endDebate = useCallback(async () => {
       setIsConnecting(false);
       socketRef.current.emit('join_room', roomId);
 
-      // Check user stance after connection
+      // Initial checks
       checkUserStance();
-
       fetchScoreboard();
-      fetchDebateTimer() ;
+      checkDebateStatus();
+      checkDebateEndability();
     });
-    socketRef.current.on('debate_timer_started', (data) => {
-        console.log('⏰ Debate timer started via socket:', data);
-        if (data.roomId === roomId) {
-          fetchDebateTimer() ;
-        }
-      });
 
-      socketRef.current.on('debate_timer_update', (data) => {
-        console.log('⏰ Debate timer update:', data);
-        if (data.roomId === roomId) {
-          setDebateTimer(prev => ({
-            ...prev,
-            elapsedSeconds: data.elapsedSeconds || 0,
-            totalDuration: data.totalDuration || 1800,
-            isActive: data.isActive || false,
-            startTime: data.startTime ? new Date(data.startTime) : null,
-            remainingSeconds: data.remainingSeconds || 0,
-          }));
-
-          // Start local timer if active
-          const minEndTimeSeconds = minEndTimeMinutes * 60;
-                  const canEnd = data.elapsedSeconds >= minEndTimeSeconds;
-                  if (canEnd !== canEndDebate) {
-                    setCanEndDebate(canEnd);
-                  }
-        }
-      });
-
+    // Socket event handlers
     socketRef.current.on('disconnect', (reason) => {
       console.log('Disconnected from server:', reason);
       setIsConnected(false);
       setIsConnecting(false);
     });
-
-    const generateMessageId = () => {
-      return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    };
 
     socketRef.current.on('connect_error', (error) => {
       console.log('Connection error:', error);
@@ -1446,26 +791,17 @@ const endDebate = useCallback(async () => {
     });
 
     socketRef.current.on('receive_message', async (msg) => {
-      console.log('Received message:', msg);
-        console.log("Evaluation started ....");
+      // Handle incoming messages
       const processMessage = async (message) => {
         const messageUserId = message.userId || message.senderId;
-
-        // Use the image field from server (which should be same as userImage)
         let userImageToUse = message.image || message.userImage || '';
-
-        // If still empty, try to fetch
-        if (!userImageToUse && messageUserId) {
-          userImageToUse = await getUserImage(messageUserId, message.sender);
-        }
 
         return {
           ...message,
-          id: message.id || generateMessageId(),
+          id: message.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           isDeleted: message.isDeleted || false,
           userId: messageUserId,
           userImage: userImageToUse,
-          // Ensure image field is also populated
           image: message.image || userImageToUse
         };
       };
@@ -1481,7 +817,6 @@ const endDebate = useCallback(async () => {
       }
     });
 
-    // Update previous_messages handler similarly
     socketRef.current.on('previous_messages', async (msgs) => {
       if (Array.isArray(msgs)) {
         const messagesWithIds = await Promise.all(
@@ -1489,13 +824,9 @@ const endDebate = useCallback(async () => {
             const messageUserId = msg.userId || msg.senderId;
             let userImageToUse = msg.image || msg.userImage || '';
 
-            if (!userImageToUse && messageUserId) {
-              userImageToUse = await getUserImage(messageUserId, msg.sender);
-            }
-
             return {
               ...msg,
-              id: msg.id || generateMessageId(),
+              id: msg.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               isDeleted: msg.isDeleted || false,
               userId: messageUserId,
               userImage: userImageToUse,
@@ -1508,10 +839,7 @@ const endDebate = useCallback(async () => {
       }
     });
 
-
-    // Handle message deletion events
     socketRef.current.on('message_deleted', (deletedMessage) => {
-      console.log('Message deleted:', deletedMessage);
       if (deletedMessage && deletedMessage.id) {
         setMessages(prev => prev.map(msg =>
           msg.id === deletedMessage.id
@@ -1526,26 +854,6 @@ const endDebate = useCallback(async () => {
       }
     });
 
-    // Handle user join/leave events to get user images
-    socketRef.current.on('user_joined', async (userData) => {
-      console.log('User joined:', userData);
-      if (userData.userId && userData.userImage) {
-        setUserImages(prev => ({
-          ...prev,
-          [userData.userId]: userData.userImage
-        }));
-      } else if (userData.userId) {
-        const fetchedImage = await fetchUserImageById(userData.userId);
-        if (fetchedImage) {
-          setUserImages(prev => ({
-            ...prev,
-            [userData.userId]: fetchedImage
-          }));
-        }
-      }
-    });
-
-    // Handle stance-related events
     socketRef.current.on('user_stance_selected', (data) => {
       setRoomStances(prev => ({
         ...prev,
@@ -1553,12 +861,39 @@ const endDebate = useCallback(async () => {
       }));
     });
 
-    socketRef.current.on('room_stances', (stances) => {
-      setRoomStances(stances);
+    socketRef.current.on('score_updated', (data) => {
+      if (data.roomId === roomId) {
+        setDebateScores(data.teamScores);
+        checkDebateEndability();
+      }
     });
 
-    socketRef.current.onAny((eventName, ...args) => {
-      console.log('Socket event:', eventName, args);
+    socketRef.current.on('debate_ended', handleDebateEnded);
+
+    socketRef.current.on('argument_evaluated', (data) => {
+      if (data.roomId === roomId && data.userId !== userId) {
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(
+            `${data.username}'s argument scored ${data.totalScore} points`,
+            ToastAndroid.SHORT
+          );
+        }
+        checkDebateEndability();
+      }
+    });
+
+    socketRef.current.on('scoreboard_updated', (data) => {
+      if (data.roomId === roomId) {
+        if (data.leaderboard) {
+          setLeaderboard(data.leaderboard);
+        }
+        if (data.standings) {
+          setDebateScores(data.standings);
+        }
+        if (data.winner) {
+          setWinner(data.winner);
+        }
+      }
     });
 
     return () => {
@@ -1566,40 +901,25 @@ const endDebate = useCallback(async () => {
         socketRef.current.disconnect();
       }
     };
-  }, [roomId, userId]);
+  }, [roomId, userId, handleDebateEnded]);
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  useEffect(() => {
-    if (messages.length > 0 && flatListRef.current) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToIndex({ index: 0, animated: true });
-      }, 100);
-    }
-  }, [messages]);
-
+  // Check for AI content
   const checkForAIContent = async (text) => {
     if (!text || text.length < 20) return null;
     const detection = await AIDetectionService.isLikelyAI(text, 0.65);
     return detection;
   };
 
+  // Send message function
   const sendMessage = async (imageData = null) => {
     if (!canSendMessages) {
-        Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
-        return;
+      Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
+      return;
     }
+
     if (!isConnected || isConnecting) return;
     if (!text.trim() && !imageData) return;
 
-
-    // Check if user has selected a stance
     if (!userStance) {
       Alert.alert('Stance Required', 'Please select your debate stance before sending messages.');
       setShowStanceModal(true);
@@ -1626,7 +946,6 @@ const endDebate = useCallback(async () => {
   };
 
   const proceedWithMessage = async (messageText, imageData, isAIDetected = false) => {
-    // CRITICAL: Check socket before proceeding
     if (!socketRef.current || !socketRef.current.connected) {
       Alert.alert('Connection Lost', 'Please reconnect to the server');
       return;
@@ -1652,124 +971,65 @@ const endDebate = useCallback(async () => {
       userStance: userStance
     };
 
-    console.log('Sending message with stance:', userStance);
-
-    // Wrap emit in try-catch and check socket
     try {
       if (!socketRef.current) {
         throw new Error('Socket not initialized');
       }
 
       socketRef.current.emit('send_message', messageData, async (ack) => {
-        console.log('Server ACK:', ack);
-
-        if (!socketRef.current?.connected) {
-          console.error('Socket lost during ACK processing');
+        if (!ack || ack.status !== "ok") {
+          Alert.alert('Error', 'Failed to send message');
           return;
         }
 
-        if (ack && ack.status === "ok") {
-          // Check if timer needs to be started (first argument)
-          if (!debateTimer.isActive) {
-            try {
-              console.log('⏰ Attempting to start timer for first argument...');
-              const timerResponse = await axios.post(`${SERVER_URL}/api/debate/${roomId}/timer/start`, {
-                userId: userId,
-                duration: 1800 // 30 minutes
-              });
+        // Evaluate the argument
+        const actualMessageId = ack.id;
+        try {
+          const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
+            argument: cleanedText,
+            team: (userStance.id || userStance).toLowerCase(),
+            roomId: roomId,
+            userId: userId,
+            username: username,
+            messageId: actualMessageId
+          });
 
-              if (timerResponse.data.success) {
-                console.log('✅ Timer started successfully');
-              }
-            } catch (timerError) {
-              console.error('Error starting timer:', timerError);
+          if (evalResponse.data.success) {
+            const { evaluation, currentStandings } = evalResponse.data;
+
+            if (currentStandings) {
+              setDebateScores(currentStandings);
             }
+
+            fetchScoreboard();
+            checkDebateEndability();
+
+            Alert.alert(
+              '📊 Argument Evaluated!',
+              `Your argument scored: ${evaluation.totalScore}/60\n\n` +
+              `Clarity: ${evaluation.clarity}/10\n` +
+              `Relevance: ${evaluation.relevance}/10\n` +
+              `Logic: ${evaluation.logic}/10\n` +
+              `Evidence: ${evaluation.evidence}/10\n` +
+              `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
+              `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
+              `Feedback: ${evaluation.feedback}`,
+              [{ text: 'OK' }]
+            );
           }
-
-          // Then evaluate the argument
-          const actualMessageId = ack.id;
-          try {
-            console.log("Evaluation Started ...");
-            const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-              argument: cleanedText,
-              team: (userStance.id || userStance).toLowerCase(),
-              roomId: roomId,
-              userId: userId,
-              username: username,
-              messageId: actualMessageId
-            });
-
-            if (evalResponse.data.success) {
-              const { evaluation, currentStandings, winner } = evalResponse.data;
-
-              // Update local scores
-              if (currentStandings) {
-                setDebateScores(currentStandings);
-              }
-
-              // REFRESH LEADERBOARD AFTER EVALUATION
-              fetchScoreboard();
-
-              // Show evaluation to user
-              Alert.alert(
-                '📊 Argument Evaluated!',
-                `Your argument scored: ${evaluation.totalScore}/60\n\n` +
-                `Clarity: ${evaluation.clarity}/10\n` +
-                `Relevance: ${evaluation.relevance}/10\n` +
-                `Logic: ${evaluation.logic}/10\n` +
-                `Evidence: ${evaluation.evidence}/10\n` +
-                `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
-                `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
-                `Feedback: ${evaluation.feedback}`,
-                [{ text: 'OK' }]
-              );
-
-              // Update message with evaluation score - CHECK SOCKET FIRST
-              const updatedMessageData = {
-                ...messageData,
-                evaluationId: evaluation.evaluationId,
-                evaluationScore: evaluation.totalScore
-              };
-
-              // CRITICAL FIX: Check socket before emitting
-              if (socketRef.current && socketRef.current.connected) {
-                socketRef.current.emit('update_message_evaluation', updatedMessageData);
-              } else {
-                console.warn('Socket not available for evaluation update');
-                // Optionally queue this update for when socket reconnects
-              }
-
-              // Check if debate ended
-              if (winner && winner.winner !== 'undecided') {
-                setWinner(winner.winner);
-                setDebateEnded(true);
-                // Refresh leaderboard when debate ends
-                fetchScoreboard();
-              }
-            }
-          } catch (error) {
-            console.error('Evaluation error:', error);
-            // Continue without evaluation
-          }
-
-          setText('');
+        } catch (error) {
+          console.error('Evaluation error:', error);
         }
-        if (ack && ack.error) {
-          Alert.alert('Error', 'Failed to send message');
-        } else if (isAIDetected) {
-          handleAIDetection();
-        }
+
+        setText('');
       });
-
     } catch (error) {
       console.error('Socket emit error:', error);
       Alert.alert('Connection Error', 'Failed to send message. Please check your connection.');
     }
-
-    setText('');
-    setPendingMessage(null);
   };
 
+  // Handle AI detection
   const handleAIDetection = () => {
     setConsecutiveAIDetections(prev => {
       const newCount = prev + 1;
@@ -1797,6 +1057,7 @@ const endDebate = useCallback(async () => {
   const handleAIConfirm = () => {
     if (pendingMessage) {
       proceedWithMessage(pendingMessage.text, pendingMessage.image, true);
+      handleAIDetection();
     }
     setAiWarningVisible(false);
   };
@@ -1809,34 +1070,150 @@ const endDebate = useCallback(async () => {
     }
   };
 
-  useEffect(() => {
-    if (text && text.length > 0) {
-      const lastDetection = consecutiveAIDetections;
-      setTimeout(async () => {
-        const detection = await checkForAIContent(text);
-        if (!detection?.isAI && lastDetection === consecutiveAIDetections) {
-          setConsecutiveAIDetections(0);
-        }
-      }, 1000);
-    }
-  }, [text]);
+  // Render message item
+  const renderMessage = ({ item }) => {
+    const isMyMessage = item.userId === userId;
+    const messageUserImage = item.userImage || userImages[item.userId] || '';
+    const messageStance = item.userStance || roomStances[item.userId]?.stance;
+    const shouldShowAvatar = !isMyMessage && !item.isSystem && !item.isDeleted && messageUserImage;
 
-  const handleImageSelected = (base64Image) => {
-    sendMessage(base64Image);
+    const textColor = messageStance ? stanceColors[messageStance]?.text || '#1e293b' : '#1e293b';
+    const backgroundColor = messageStance ? stanceColors[messageStance]?.light || '#f8fafc' : '#f8fafc';
+
+    const messageText = item.text || '';
+    const hasContent = messageText.trim().length > 0;
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onLongPress={() => handleMessageLongPress(item)}
+        delayLongPress={500}
+        disabled={item.isSystem || item.isDeleted}
+      >
+        <View style={[
+          styles.messageRow,
+          isMyMessage ? styles.myMessageRow : styles.theirMessageRow
+        ]}>
+          {!isMyMessage && shouldShowAvatar && (
+            <View style={styles.avatarWrapper}>
+              <Image
+                source={getUserImageSource(messageUserImage)}
+                style={styles.avatar}
+              />
+            </View>
+          )}
+
+          <View style={[
+            styles.bubbleWrapper,
+            isMyMessage && styles.myBubbleWrapper
+          ]}>
+            <View style={[
+              styles.messageBubble,
+              isMyMessage ? styles.myBubble : styles.theirBubble,
+              item.isDeleted && styles.deletedBubble,
+              !isMyMessage && !item.isSystem && !item.isDeleted && {
+                backgroundColor: backgroundColor,
+                borderLeftWidth: 4,
+                borderLeftColor: stanceColors[messageStance]?.background || '#e2e8f0'
+              },
+            ]}>
+              {!isMyMessage && !item.isSystem && !item.isDeleted && (
+                <View style={styles.userInfo}>
+                  <Text style={[styles.username, { color: textColor }]}>
+                    {item.sender}
+                  </Text>
+                  {messageStance && (
+                    <View style={[
+                      styles.stanceTag,
+                      { backgroundColor: `${stanceColors[messageStance]?.background}20` }
+                    ]}>
+                      <Text style={[
+                        styles.stanceTagText,
+                        { color: stanceColors[messageStance]?.background }
+                      ]}>
+                        {stanceLabels[messageStance] || messageStance}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {isMyMessage && userStance && !item.isSystem && !item.isDeleted && (
+                <View style={styles.myStance}>
+                  <Text style={[
+                    styles.myStanceText,
+                    { color: stanceColors[userStance.id]?.text || stanceColors[userStance]?.text }
+                  ]}>
+                    Debating: {userStance.label || stanceLabels[userStance]}
+                  </Text>
+                </View>
+              )}
+
+              {item.aiDetected && !item.isDeleted && (
+                <View style={styles.aiTag}>
+                  <Text style={styles.aiTagText}>🤖 AI Detected</Text>
+                </View>
+              )}
+
+              {item.evaluationScore && !item.isDeleted && (
+                <View style={[
+                  styles.scoreBadge,
+                  {
+                    backgroundColor: item.evaluationScore > 40 ? '#10b981' :
+                                   item.evaluationScore > 30 ? '#f59e0b' : '#ef4444'
+                  }
+                ]}>
+                  <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
+                </View>
+              )}
+
+              {item.isDeleted ? (
+                <View style={styles.deletedWrapper}>
+                  <Text style={styles.deletedIcon}>🗑️</Text>
+                  <Text style={styles.deletedText}>This message was deleted</Text>
+                </View>
+              ) : hasContent ? (
+                <View style={styles.contentWrapper}>
+                  <Text style={[
+                    styles.messageText,
+                    isMyMessage && styles.myMessageText,
+                    item.isSystem && styles.systemText,
+                    !isMyMessage && !item.isSystem && { color: textColor }
+                  ]}>
+                    {messageText}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={[
+                styles.timestamp,
+                isMyMessage && styles.myTimestamp,
+                item.isDeleted && styles.deletedTimestamp
+              ]}>
+                {new Date(item.time).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
+            </View>
+          </View>
+
+          {isMyMessage && !item.isSystem && !item.isDeleted && (
+            <View style={styles.avatarWrapper}>
+              <Image
+                source={getUserImageSource(userImage)}
+                style={styles.avatar}
+              />
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
-  const handleKeyPress = ({ nativeEvent }) => {
-    if (nativeEvent.key === 'Enter' && Platform.OS === 'web') {
-      if (!nativeEvent.shiftKey) {
-        nativeEvent.preventDefault();
-        sendMessage();
-      }
-    }
-  };
-
+  // Handle message long press
   const handleMessageLongPress = (message) => {
     if (message.isDeleted) return;
-
     setSelectedMessage(message);
 
     if (message.sender === username) {
@@ -1882,22 +1259,18 @@ const endDebate = useCallback(async () => {
   const deleteMessage = () => {
     if (!messageToDelete) return;
 
-    console.log('Deleting message:', messageToDelete.id);
-
     socketRef.current.emit('delete_message', {
       messageId: messageToDelete.id,
       roomId: roomId,
       username: username,
       userId: userId
     }, (ack) => {
-      console.log('Delete ACK:', ack);
       if (ack && ack.success) {
         setMessages(prev => prev.map(msg =>
           msg.id === messageToDelete.id
             ? { ...msg, text: 'This message was deleted', image: null, isDeleted: true }
             : msg
         ));
-
         Alert.alert('Success', 'Message deleted successfully');
       } else {
         Alert.alert('Error', ack?.error || 'Failed to delete message');
@@ -1918,7 +1291,6 @@ const endDebate = useCallback(async () => {
           text: 'Report',
           style: 'destructive',
           onPress: () => {
-            console.log('Reporting message:', message.id);
             Alert.alert('Report Submitted', 'Thank you for your report. We will review this message.');
           },
         },
@@ -1931,185 +1303,7 @@ const endDebate = useCallback(async () => {
     setSelectedMessage(null);
   };
 
-  const updateDebateSettings = async () => {
-    try {
-        console.log("Settings are " + debateSettings);
-        console.log("User id at this moment is " + userId);
-      const response = await axios.put(`${SERVER_URL}/api/debate/${roomId}/settings`, {
-        userId: userId,
-        settings: debateSettings
-      });
-    console.log("Debate settings are " + response.data);
-      if (response.data.success) {
-        Alert.alert('Success', 'Debate settings updated');
-      }
-    } catch (error) {
-      console.error('Error updating settings:', error);
-      Alert.alert('Error', 'Failed to update settings');
-    }
-  };
-
-  const renderMessage = ({ item }) => {
-    const isMyMessage = item.userId === userId;
-    const messageUserImage = item.userImage || userImages[item.userId] || '';
-    const messageStance = item.userStance || roomStances[item.userId]?.stance;
-    const shouldShowAvatar = !isMyMessage && !item.isSystem && !item.isDeleted && messageUserImage;
-
-    const textColor = getStanceTextColor(messageStance);
-    const backgroundColor = getStanceBackgroundColor(messageStance);
-
-    // Get the actual message text
-    const messageText = item.text || '';
-
-    // If text is empty and no image, don't render content
-    const hasContent = messageText.trim().length > 0;
-
-    return (
-        <TouchableOpacity
-              activeOpacity={0.9}
-              onLongPress={() => handleMessageLongPress(item)}
-              delayLongPress={500} // 500ms delay for long press
-              disabled={item.isSystem || item.isDeleted} // Disable for system/deleted messages
-            >
-      <View style={[
-        styles.messageRow,
-        isMyMessage ? styles.myMessageRow : styles.theirMessageRow
-      ]}>
-
-        {/* Avatar for others' messages */}
-        {!isMyMessage && shouldShowAvatar && (
-          <View style={styles.avatarWrapper}>
-            <Image
-              source={getUserImageSource(messageUserImage)}
-              style={styles.avatar}
-            />
-          </View>
-        )}
-
-        {/* Message Bubble */}
-        <View style={[
-          styles.bubbleWrapper,
-          isMyMessage && styles.myBubbleWrapper
-        ]}>
-          <View style={[
-            styles.messageBubble,
-            isMyMessage ? styles.myBubble : styles.theirBubble,
-            item.isDeleted && styles.deletedBubble,
-            !isMyMessage && !item.isSystem && !item.isDeleted && {
-              backgroundColor: backgroundColor,
-              borderLeftWidth: 4,
-              borderLeftColor: stanceColors[messageStance]?.background || '#e2e8f0'
-            },
-          ]}>
-
-            {/* User info for others' messages */}
-            {!isMyMessage && !item.isSystem && !item.isDeleted && (
-              <View style={styles.userInfo}>
-                <Text style={[styles.username, { color: textColor }]}>
-                  {item.sender}
-                </Text>
-                {messageStance && (
-                  <View style={[
-                    styles.stanceTag,
-                    { backgroundColor: `${stanceColors[messageStance]?.background}20` }
-                  ]}>
-                    <Text style={[
-                      styles.stanceTagText,
-                      { color: stanceColors[messageStance]?.background }
-                    ]}>
-                      {stanceLabels[messageStance] || messageStance}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* My stance indicator */}
-            {isMyMessage && userStance && !item.isSystem && !item.isDeleted && (
-              <View style={styles.myStance}>
-                <Text style={[
-                  styles.myStanceText,
-                  { color: stanceColors[userStance.id]?.text || stanceColors[userStance]?.text }
-                ]}>
-                  Debating: {userStance.label || stanceLabels[userStance]}
-                </Text>
-              </View>
-            )}
-
-            {/* AI Detection */}
-            {item.aiDetected && !item.isDeleted && (
-              <View style={styles.aiTag}>
-                <Text style={styles.aiTagText}>🤖 AI Detected</Text>
-              </View>
-            )}
-
-            {/* Score Badge */}
-            {item.evaluationScore && !item.isDeleted && (
-              <View style={[
-                styles.scoreBadge,
-                {
-                  backgroundColor: item.evaluationScore > 40 ? '#10b981' :
-                                 item.evaluationScore > 30 ? '#f59e0b' : '#ef4444'
-                }
-              ]}>
-                <Text style={styles.scoreBadgeText}>{item.evaluationScore} pts</Text>
-              </View>
-            )}
-
-            {/* ACTUAL MESSAGE CONTENT - This is the main fix */}
-            {item.isDeleted ? (
-              <View style={styles.deletedWrapper}>
-                <Text style={styles.deletedIcon}>🗑️</Text>
-                <Text style={styles.deletedText}>This message was deleted</Text>
-              </View>
-            ) : hasContent ? (
-              <View style={styles.contentWrapper}>
-                {messageText.trim().length > 0 && (
-                  <Text style={[
-                    styles.messageText,
-                    isMyMessage && styles.myMessageText,
-                    item.isSystem && styles.systemText,
-                    !isMyMessage && !item.isSystem && { color: textColor }
-                  ]}>
-                    {messageText}
-                  </Text>
-                )}
-
-              </View>
-            ) : null}
-
-            {/* Timestamp - positioned at bottom */}
-            <Text style={[
-              styles.timestamp,
-              isMyMessage && styles.myTimestamp,
-              item.isDeleted && styles.deletedTimestamp
-            ]}>
-              {new Date(item.time).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-
-            {/* Options hint */}
-            {isMyMessage && !item.isSystem && !item.isDeleted && (
-              <Text style={styles.optionsHint}>Long press for options</Text>
-            )}
-          </View>
-        </View>
-
-        {/* Avatar for my messages */}
-        {isMyMessage && !item.isSystem && !item.isDeleted && (
-          <View style={styles.avatarWrapper}>
-            <Image
-              source={getUserImageSource(userImage)}
-              style={styles.avatar}
-            />
-          </View>
-        )}
-      </View>
-      </TouchableOpacity>
-    );
-  };
+  // Loading state
   if (!hasCheckedStance) {
     return (
       <View style={styles.loadingOverlay}>
@@ -2120,216 +1314,6 @@ const endDebate = useCallback(async () => {
       </View>
     );
   }
-
-  const ScoreboardModal = ({ visible, onClose, scores, leaderboard, roomId, userId }) => {
-    const [activeTab, setActiveTab] = useState('scores');
-
-    if (loadingScoreboard) {
-        return (
-          <Modal
-            animationType="slide"
-            transparent={true}
-            visible={visible}
-            onRequestClose={onClose}
-          >
-            <View style={scoreboardStyles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#667eea" />
-            </View>
-          </Modal>
-        );
-      }
-
-    return (
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={visible}
-        onRequestClose={onClose}
-      >
-
-        <View style={scoreboardStyles.modalOverlay}>
-          <View style={scoreboardStyles.modalContent}>
-            <View style={scoreboardStyles.header}>
-              <Text style={scoreboardStyles.title}>🏆 Debate Scoreboard</Text>
-              <TouchableOpacity
-                style={scoreboardStyles.refreshButton}
-                onPress={fetchScoreboard}
-                disabled={loadingScoreboard}
-              >
-                {loadingScoreboard ? (
-                  <ActivityIndicator size="small" color="#667eea" />
-                ) : (
-                  <Text style={scoreboardStyles.refreshButtonText}>🔄</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onClose} style={scoreboardStyles.closeButton}>
-                <Text style={scoreboardStyles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={scoreboardStyles.tabContainer}>
-              <TouchableOpacity
-                style={[scoreboardStyles.tab, activeTab === 'scores' && scoreboardStyles.activeTab]}
-                onPress={() => setActiveTab('scores')}
-              >
-                <Text style={scoreboardStyles.tabText}>Team Scores</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[scoreboardStyles.tab, activeTab === 'leaderboard' && scoreboardStyles.activeTab]}
-                onPress={() => setActiveTab('leaderboard')}
-              >
-                <Text style={scoreboardStyles.tabText}>Leaderboard</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[scoreboardStyles.tab, activeTab === 'settings' && scoreboardStyles.activeTab]}
-                onPress={() => setActiveTab('settings')}
-              >
-                <Text style={scoreboardStyles.tabText}>Settings</Text>
-              </TouchableOpacity>
-            </View>
-
-            {activeTab === 'scores' && (
-              <ScrollView style={scoreboardStyles.content}>
-                {['favor', 'against', 'neutral'].map((team) => (
-                  <View key={team} style={[
-                    scoreboardStyles.teamCard,
-                    winner === team && scoreboardStyles.winningTeamCard
-                  ]}>
-                    <View style={scoreboardStyles.teamHeader}>
-                      <Text style={scoreboardStyles.teamName}>
-                        {team === 'favor' ? '👍 In Favor' :
-                         team === 'against' ? '👎 Against' : '🤝 Neutral'}
-                        {winner === team && ' 🏆'}
-                      </Text>
-                      <Text style={scoreboardStyles.teamScore}>
-                        {scores[team]?.average?.toFixed(1) || '0.0'} avg
-                      </Text>
-                    </View>
-
-                    <View style={scoreboardStyles.statsGrid}>
-                      <View style={scoreboardStyles.statItem}>
-                        <Text style={scoreboardStyles.statLabel}>Total Points</Text>
-                        <Text style={scoreboardStyles.statValue}>{scores[team]?.total || 0}</Text>
-                      </View>
-                      <View style={scoreboardStyles.statItem}>
-                        <Text style={scoreboardStyles.statLabel}>Arguments</Text>
-                        <Text style={scoreboardStyles.statValue}>{scores[team]?.count || 0}</Text>
-                      </View>
-                      <View style={scoreboardStyles.statItem}>
-                        <Text style={scoreboardStyles.statLabel}>Participants</Text>
-                        <Text style={scoreboardStyles.statValue}>{scores[team]?.participants || 0}</Text>
-                      </View>
-                    </View>
-
-                    {scores[team]?.count > 0 && (
-                      <View style={scoreboardStyles.progressBar}>
-                        <View
-                          style={[
-                            scoreboardStyles.progressFill,
-                            {
-                              width: `${Math.min(100, (scores[team].average / 10) * 100)}%`,
-                              backgroundColor: team === 'favor' ? '#10b981' :
-                                             team === 'against' ? '#ef4444' : '#6b7280'
-                            }
-                          ]}
-                        />
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            {activeTab === 'leaderboard' && (
-              <ScrollView style={scoreboardStyles.content}>
-                {leaderboard.length > 0 ? (
-                  leaderboard.map((player, index) => (
-                    <View key={index} style={scoreboardStyles.leaderboardRow}>
-                      <Text style={scoreboardStyles.rank}>#{index + 1}</Text>
-                      <View style={scoreboardStyles.playerInfo}>
-                        <Text style={scoreboardStyles.playerName}>{player.username}</Text>
-                        <View style={scoreboardStyles.playerDetails}>
-                          <Text style={scoreboardStyles.playerTeam}>
-                            {player.team === 'favor' ? '👍' :
-                             player.team === 'against' ? '👎' : '🤝'}
-                          </Text>
-                          <Text style={scoreboardStyles.playerStats}>
-                            {player.argumentCount} args • {player.averageScore.toFixed(1)} avg
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={scoreboardStyles.playerScore}>{player.totalScore}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={scoreboardStyles.emptyText}>No leaderboard data yet</Text>
-                )}
-              </ScrollView>
-            )}
-
-            {activeTab === 'settings' && (
-              <ScrollView style={scoreboardStyles.content}>
-                <Text style={scoreboardStyles.sectionTitle}>Debate Settings</Text>
-
-                <View style={scoreboardStyles.settingItem}>
-                  <Text style={scoreboardStyles.settingLabel}>Max Duration (minutes)</Text>
-                  <TextInput
-                    style={scoreboardStyles.settingInput}
-                    value={debateSettings.maxDuration.toString()}
-                    onChangeText={(text) => setDebateSettings({
-                      ...debateSettings,
-                      maxDuration: parseInt(text) || 30
-                    })}
-                    keyboardType="numeric"
-                  />
-                </View>
-
-                <View style={scoreboardStyles.settingItem}>
-                  <Text style={scoreboardStyles.settingLabel}>Max Arguments</Text>
-                  <TextInput
-                    style={scoreboardStyles.settingInput}
-                    value={debateSettings.maxArguments.toString()}
-                    onChangeText={(text) => setDebateSettings({
-                      ...debateSettings,
-                      maxArguments: parseInt(text) || 50
-                    })}
-                    keyboardType="numeric"
-                  />
-                </View>
-
-                <View style={scoreboardStyles.settingItem}>
-                  <Text style={scoreboardStyles.settingLabel}>Win Margin Threshold (%)</Text>
-                  <TextInput
-                    style={scoreboardStyles.settingInput}
-                    value={debateSettings.winMarginThreshold.toString()}
-                    onChangeText={(text) => setDebateSettings({
-                      ...debateSettings,
-                      winMarginThreshold: parseInt(text) || 10
-                    })}
-                    keyboardType="numeric"
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={scoreboardStyles.saveButton}
-                  onPress={() => updateDebateSettings()}
-                >
-                  <Text style={scoreboardStyles.saveButtonText}>Save Settings</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            )}
-
-            <TouchableOpacity
-              style={scoreboardStyles.endDebateButton}
-              onPress={endDebate}
-            >
-              <Text style={scoreboardStyles.endDebateButtonText}>End Debate Now</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
 
   return (
     <KeyboardAvoidingView
@@ -2356,8 +1340,26 @@ const endDebate = useCallback(async () => {
         onCancel={handleAICancel}
       />
 
-      {/* Header */}
+      {/* Scoreboard Modal */}
+      <ScoreboardModal
+        visible={showScoreboard}
+        onClose={() => setShowScoreboard(false)}
+        scores={debateScores}
+        leaderboard={leaderboard}
+        roomId={roomId}
+        userId={userId}
+        winner={winner}
+        debateStatus={debateStatus}
+        canEndDebate={canEndDebate}
+        endDebate={endDebate}
+        loadingScoreboard={loadingScoreboard}
+        fetchScoreboard={fetchScoreboard}
+        debateSettings={debateSettings}
+        setDebateSettings={setDebateSettings}
+        updateDebateSettings={updateDebateSettings}
+      />
 
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.roomInfo}>
@@ -2386,61 +1388,19 @@ const endDebate = useCallback(async () => {
           </Text>
         </View>
 
-        {/* Timer Display */}
+        {/* Debate Status Indicator */}
+        <View style={[
+          styles.debateStatusIndicator,
+          debateStatus === 'ended' ? styles.debateStatusEnded : styles.debateStatusActive
+        ]}>
+          <Text style={styles.debateStatusText}>
+            {debateStatus === 'ended' ? '🏁 DEBATE ENDED' : '⚡ DEBATE ACTIVE'}
+          </Text>
+          {winner && winner !== 'undecided' && debateStatus === 'ended' && (
+            <Text style={styles.winnerText}>Winner: {winner}</Text>
+          )}
+        </View>
 
-        {(debateTimer.totalDuration > 0) && (
-          <View style={styles.timerContainer}>
-            <View style={styles.timerHeader}>
-              <Text style={styles.timerIcon}>⏰</Text>
-              <Text style={styles.timerTitle}>
-                {debateTimer.isActive ? 'Debate Timer' : 'Debate Not Started'}
-              </Text>
-            </View>
-
-            {debateTimer.isActive ? (
-              <>
-                <View style={styles.timerProgressContainer}>
-                  <View style={styles.timerProgressBar}>
-                    <View
-                      style={[
-                        styles.timerProgressFill,
-                        {
-                          width: `${Math.min(100, calculateProgress())}%`,
-                          backgroundColor: calculateProgress() > 80 ? '#ef4444' :
-                                         calculateProgress() > 60 ? '#f59e0b' : '#10b981'
-                        }
-                      ]}
-                    />
-                  </View>
-
-                  <View style={styles.timerInfo}>
-                    <Text style={styles.timerTime}>
-                      {formatTime(debateTimer.remainingSeconds)}
-                    </Text>
-                    <Text style={styles.timerElapsed}>
-                      {formatTime(debateTimer.elapsedSeconds)} elapsed
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.timerStatus}>
-                  <View style={[
-                    styles.timerStatusDot,
-                    { backgroundColor: debateTimer.isActive ? '#10b981' : '#6b7280' }
-                  ]} />
-                  <Text style={styles.timerStatusText}>
-                    {debateTimer.isActive ? 'Active' : 'Not Started'}
-                    {!canEndDebate && ' • Cannot end yet'}
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <Text style={styles.timerInactiveText}>
-                Timer will start when first argument is submitted
-              </Text>
-            )}
-          </View>
-        )}
         {/* User Stance Indicator */}
         {userStance && (
           <View style={[
@@ -2460,11 +1420,11 @@ const endDebate = useCallback(async () => {
           </View>
         )}
 
-        {/* AI Usage Indicator - REMOVE THE SCOREBOARD BUTTON FROM HERE */}
-        {consecutiveAIDetections > 0 && (
-          <View style={styles.aiUsageIndicator}>
-            <Text style={styles.aiUsageText}>
-              AI Usage: {consecutiveAIDetections}/3 warnings
+        {/* Debate Requirements Status */}
+        {debateStatus === 'active' && (
+          <View style={styles.requirementsIndicator}>
+            <Text style={styles.requirementsText}>
+              {canEndDebate.canEnd ? '✅ Ready to end debate' : `⏳ ${canEndDebate.reason}`}
             </Text>
           </View>
         )}
@@ -2488,27 +1448,28 @@ const endDebate = useCallback(async () => {
           </View>
         </View>
       )}
-    <View style={styles.rightSideButtons}>
-                              {/* Scorecard Button */}
 
-                              <TouchableOpacity
-                                style={styles.floatingScoreButton}
-                                onPress={() => {
+      {/* Floating Score Button */}
+      <View style={styles.rightSideButtons}>
+        <TouchableOpacity
+          style={styles.floatingScoreButton}
+          onPress={() => {
+            fetchScoreboard();
+            setShowScoreboard(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={styles.scoreButtonContent}>
+            <Text style={styles.scoreButtonIcon}>
+              {debateStatus === 'ended' ? '🏆' : '📊'}
+            </Text>
+            <Text style={styles.scoreButtonText}>
+              {debateStatus === 'ended' ? 'Results' : 'Scores'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
 
-                                  if (!showScoreboard) {
-                                    fetchScoreboard();
-                                    setShowScoreboard(true);
-                                  }
-                                }}
-                                activeOpacity={0.7}
-                                disabled={showScoreboard}
-                              >
-                                <View style={styles.scoreButtonContent}>
-                                  <Text style={styles.scoreButtonIcon}>📊</Text>
-                                  <Text style={styles.scoreButtonText}>Scores</Text>
-                                </View>
-                              </TouchableOpacity>
-                              </View>
       {/* Messages */}
       <View style={styles.messagesContainer}>
         <FlatList
@@ -2540,28 +1501,18 @@ const endDebate = useCallback(async () => {
           }}
         />
       </View>
-        <ScoreboardModal
-              visible={showScoreboard}
-              onClose={() => setShowScoreboard(false)}
-              scores={debateScores}
-              leaderboard={leaderboard}
-              roomId={roomId}
-              userId={userId}
-            />
+
       {/* Input Area */}
-      <View style={[styles.inputContainer, isConnecting && styles.inputContainerDisabled]}>
+      <View style={[styles.inputContainer, (!isConnected || isConnecting || !userStance || !canSendMessages) && styles.inputContainerDisabled]}>
         <View style={styles.inputRow}>
-          <ImageUploader
-            onImageSelected={handleImageSelected}
-            disabled={!isConnected || isConnecting || !userStance || !canSendMessages}
-          />
           <TextInput
             style={[
               styles.input,
-              (!isConnected || isConnecting || !userStance) && styles.inputDisabled,
+              (!isConnected || isConnecting || !userStance || !canSendMessages) && styles.inputDisabled,
             ]}
             placeholder={
               !userStance ? 'Select your stance to chat...' :
+              !canSendMessages ? 'Debate has ended' :
               isConnecting ? 'Connecting...' :
               isConnected ? 'Type your argument...' : 'Disconnected'
             }
@@ -2570,15 +1521,14 @@ const endDebate = useCallback(async () => {
             onChangeText={setText}
             onSubmitEditing={() => sendMessage()}
             returnKeyType="send"
-            onKeyPress={handleKeyPress}
-            editable={ isConnected && !isConnecting && !!userStance && canSendMessages }
             multiline
             maxLength={500}
+            editable={isConnected && !isConnecting && !!userStance && canSendMessages}
           />
           <TouchableOpacity
             style={[
               styles.sendBtn,
-              (!text.trim() || !isConnected || isConnecting || !userStance || !canSendMessages ) && styles.sendBtnDisabled,
+              (!text.trim() || !isConnected || isConnecting || !userStance || !canSendMessages) && styles.sendBtnDisabled,
             ]}
             onPress={() => sendMessage()}
             disabled={!text.trim() || !isConnected || isConnecting || !userStance || !canSendMessages}
@@ -2604,18 +1554,6 @@ const endDebate = useCallback(async () => {
             <Text style={styles.modalText}>
               Are you sure you want to delete this message? This action cannot be undone.
             </Text>
-
-            {messageToDelete && (
-              <View style={styles.messagePreview}>
-                <Text style={styles.previewText} numberOfLines={3}>
-                  {messageToDelete.text}
-                </Text>
-                {messageToDelete.image && (
-                  <Text style={styles.previewImageText}>📷 Image attached</Text>
-                )}
-              </View>
-            )}
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
@@ -2636,6 +1574,612 @@ const endDebate = useCallback(async () => {
     </KeyboardAvoidingView>
   );
 }
+
+// Styles (same as before, just remove timer-related styles)
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  header: {
+    backgroundColor: '#667eea',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  roomInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  headerTitle: {
+    fontFamily: 'serif',
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 18,
+  },
+  userBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  userBadgeImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+  },
+  connectionIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  connectedDot: {
+    backgroundColor: '#4ade80',
+  },
+  disconnectedDot: {
+    backgroundColor: '#f87171',
+  },
+  connectionText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+  },
+  debateStatusIndicator: {
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  debateStatusActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10b981',
+    borderWidth: 1,
+  },
+  debateStatusEnded: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderColor: '#ef4444',
+    borderWidth: 1,
+  },
+  debateStatusText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  winnerText: {
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  userStanceIndicator: {
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+    borderLeftWidth: 4,
+  },
+  userStanceText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  requirementsIndicator: {
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+  },
+  requirementsText: {
+    fontSize: 12,
+    color: '#92400e',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  connectionBanner: {
+    backgroundColor: '#fef2f2',
+    padding: 12,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#fecaca',
+  },
+  connectionBannerText: {
+    color: '#dc2626',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(248, 250, 252, 0.95)',
+    zIndex: 10,
+  },
+  loadingContent: {
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 32,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  connectingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  rightSideButtons: {
+    position: 'absolute',
+    right: 16,
+    top: Platform.OS === 'ios' ? 100 : 80,
+    zIndex: 1000,
+    alignItems: 'flex-end',
+  },
+  floatingScoreButton: {
+    backgroundColor: '#667eea',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    minWidth: 80,
+  },
+  scoreButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreButtonIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  scoreButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  messagesContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    marginVertical: 2,
+    paddingHorizontal: 8,
+  },
+  myMessageRow: {
+    justifyContent: 'flex-end',
+  },
+  theirMessageRow: {
+    justifyContent: 'flex-start',
+  },
+  avatarWrapper: {
+    width: 32,
+    justifyContent: 'flex-end',
+    marginBottom: 4,
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+  },
+  bubbleWrapper: {
+    maxWidth: '75%',
+  },
+  myBubbleWrapper: {
+    alignItems: 'flex-end',
+  },
+  messageBubble: {
+    padding: 10,
+    borderRadius: 18,
+    minWidth: 50,
+    maxWidth: '100%',
+    elevation: 2,
+  },
+  myBubble: {
+    backgroundColor: '#667eea',
+    borderBottomRightRadius: 4,
+  },
+  theirBubble: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  deletedBubble: {
+    backgroundColor: '#f1f5f9',
+    opacity: 0.7,
+    padding: 8,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  username: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  stanceTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  stanceTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  myStance: {
+    marginBottom: 4,
+  },
+  myStanceText: {
+    fontSize: 11,
+    fontWeight: '600',
+    fontStyle: 'italic',
+  },
+  aiTag: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  aiTagText: {
+    color: '#dc2626',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  scoreBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 40,
+    zIndex: 1,
+  },
+  scoreBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  contentWrapper: {
+    margin: 0,
+    padding: 0,
+  },
+  messageText: {
+    fontSize: 15,
+    color: '#1e293b',
+    lineHeight: 20,
+    includeFontPadding: false,
+    paddingVertical: 0,
+    marginVertical: 0,
+  },
+  myMessageText: {
+    color: '#fff',
+  },
+  systemText: {
+    color: '#64748b',
+    fontStyle: 'italic',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  timestamp: {
+    fontSize: 10,
+    color: 'rgba(100, 116, 139, 0.7)',
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    marginBottom: 0,
+  },
+  myTimestamp: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  deletedTimestamp: {
+    color: '#94a3b8',
+  },
+  deletedWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  deletedIcon: {
+    fontSize: 12,
+    marginRight: 6,
+  },
+  deletedText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 100,
+    paddingHorizontal: 20,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#475569',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  inputContainer: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 20,
+    borderTopWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  inputContainerDisabled: {
+    opacity: 0.6,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  input: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    maxHeight: 100,
+    backgroundColor: '#f8fafc',
+    fontSize: 16,
+    lineHeight: 20,
+    textAlignVertical: 'center',
+  },
+  inputDisabled: {
+    backgroundColor: '#f1f5f9',
+    color: '#94a3b8',
+  },
+  sendBtn: {
+    backgroundColor: '#667eea',
+    marginLeft: 12,
+    borderRadius: 22,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#667eea',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sendBtnDisabled: {
+    backgroundColor: '#cbd5e1',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sendBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 2,
+  },
+  charCount: {
+    fontSize: 11,
+    color: '#94a3b8',
+    textAlign: 'right',
+    marginTop: 6,
+    marginRight: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  deleteButton: {
+    backgroundColor: '#ef4444',
+  },
+  cancelButtonText: {
+    color: '#475569',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+
+const stanceStyles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  stancesContainer: {
+    gap: 16,
+    marginBottom: 24,
+  },
+  stanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 2,
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
+  stanceButtonSelected: {
+    backgroundColor: '#f1f5f9',
+    transform: [{ scale: 1.02 }],
+  },
+  stanceEmoji: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  emojiText: {
+    fontSize: 20,
+  },
+  stanceLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1e293b',
+    flex: 1,
+  },
+  stanceLabelSelected: {
+    fontWeight: '700',
+  },
+  loading: {
+    marginLeft: 8,
+  },
+  warning: {
+    backgroundColor: '#fffbeb',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  warningText: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+});
 
 const scoreboardStyles = StyleSheet.create({
   modalOverlay: {
@@ -2658,11 +2202,22 @@ const scoreboardStyles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: 'white',
+    fontSize: 16,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
@@ -2671,11 +2226,29 @@ const scoreboardStyles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1e293b',
+    flex: 1,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  refreshButtonText: {
+    fontSize: 16,
+    color: '#64748b',
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#f1f5f9',
     justifyContent: 'center',
     alignItems: 'center',
@@ -2684,6 +2257,31 @@ const scoreboardStyles = StyleSheet.create({
     fontSize: 18,
     color: '#64748b',
     fontWeight: 'bold',
+  },
+  statusBanner: {
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  statusText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statusActive: {
+    color: '#10b981',
+  },
+  statusEnded: {
+    color: '#ef4444',
+  },
+  winnerText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -2704,9 +2302,6 @@ const scoreboardStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#64748b',
-  },
-  activeTabText: {
-    color: '#667eea',
   },
   content: {
     maxHeight: 400,
@@ -2840,6 +2435,11 @@ const scoreboardStyles = StyleSheet.create({
     fontSize: 16,
     color: '#1e293b',
   },
+  settingDescription: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+  },
   saveButton: {
     backgroundColor: '#667eea',
     borderRadius: 12,
@@ -2859,1071 +2459,13 @@ const scoreboardStyles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 20,
   },
+  endDebateButtonDisabled: {
+    backgroundColor: '#94a3b8',
+    opacity: 0.7,
+  },
   endDebateButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
-});
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    backgroundColor: '#667eea',
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  roomInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  headerTitle: {
-    fontFamily: 'serif',
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: 18,
-  },
-  userBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  userBadgeImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
-  connectionIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  connectionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  connectedDot: {
-    backgroundColor: '#4ade80',
-  },
-  disconnectedDot: {
-    backgroundColor: '#f87171',
-  },
-  connectionText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '500',
-  },
-  userStanceIndicator: {
-    padding: 8,
-    borderRadius: 8,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    borderLeftWidth: 4,
-  },
-  userStanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  connectionBanner: {
-    backgroundColor: '#fef2f2',
-    padding: 12,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#fecaca',
-  },
-  connectionBannerText: {
-    color: '#dc2626',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  messagesContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(248, 250, 252, 0.95)',
-    zIndex: 10,
-  },
-  loadingContent: {
-    alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 32,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  connectingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  msgContainer: {
-    marginVertical: 4,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  myMsgContainer: {
-    justifyContent: 'flex-end',
-  },
-  userAvatarContainer: {
-    width: 32,
-    height: 32,
-    marginHorizontal: 4,
-//     marginBottom: 4,
-  },
-  userAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-  },
-  msgBox: {
-    padding: 12,
-    borderRadius: 20,
-    maxWidth: '70%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  myMsg: {
-    backgroundColor: '#667eea',
-    borderBottomRightRadius: 4,
-  },
-  theirMsg: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  systemMsg: {
-    backgroundColor: 'transparent',
-    alignSelf: 'center',
-    maxWidth: '90%',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  deletedMsg: {
-    backgroundColor: '#f1f5f9',
-    borderColor: '#e2e8f0',
-    opacity: 0.7,
-  },
-  aiDetectedMsg: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#dc2626',
-  },
-  msgUserInfo: {
-    marginBottom: 6,
-  },
-  userInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  msgUser: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  stanceBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
-  },
-  stanceBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  myStanceIndicator: {
-    marginBottom: 8,
-  },
-  myStanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-    fontStyle: 'italic',
-  },
-  msgText: {
-    fontSize: 16,
-      color: '#1e293b',
-      lineHeight: 22,
-      // Add these:
-      includeFontPadding: false, // Remove extra padding around text
-      textAlignVertical: 'center', // Center text vertically
-      // For iOS:
-      paddingVertical: 0,
-      // For better line break handling:
-      flexShrink: 1,
-      marginVertical:0
-  },
-  myMsgText: {
-    color: '#fff',
-  },
-  systemMsgText: {
-    color: '#64748b',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    fontSize: 14,
-  },
-  deletedContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  deletedIcon: {
-    fontSize: 14,
-    marginRight: 8,
-  },
-  deletedText: {
-    fontSize: 14,
-    color: '#94a3b8',
-    fontStyle: 'italic',
-  },
-  msgImage: {
-    width: 200,
-    height: 150,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  msgTime: {
-    fontSize: 11,
-    color: 'rgba(100, 116, 139, 0.7)',
-    marginTop: 6,
-    alignSelf: 'flex-end',
-  },
-  myMsgTime: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  deletedMsgTime: {
-    color: '#94a3b8',
-  },
-  messageOptionsIndicator: {
-    marginTop: 4,
-  },
-  optionsHint: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.5)',
-    fontStyle: 'italic',
-  },
-  aiWarningBadge: {
-    backgroundColor: '#fef2f2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  aiWarningText: {
-    color: '#dc2626',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  aiUsageIndicator: {
-    backgroundColor: '#fffbeb',
-    padding: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#fcd34d',
-    marginTop: 8,
-  },
-  aiUsageText: {
-    color: '#92400e',
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  inputContainer: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 20,
-    borderTopWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  inputContainerDisabled: {
-    opacity: 0.6,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  uploaderContainer: {
-    marginRight: 12,
-  },
-  uploadBtn: {
-    backgroundColor: '#c7d2fe',
-    borderRadius: 20,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  uploadBtnDisabled: {
-    opacity: 0.5,
-  },
-  uploadBtnText: {
-    fontSize: 18,
-  },
-  input: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    maxHeight: 100,
-    backgroundColor: '#f8fafc',
-    fontSize: 16,
-    lineHeight: 20,
-    textAlignVertical: 'center',
-  },
-  inputDisabled: {
-    backgroundColor: '#f1f5f9',
-    color: '#94a3b8',
-  },
-  sendBtn: {
-    backgroundColor: '#667eea',
-    marginLeft: 12,
-    borderRadius: 22,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#667eea',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  sendBtnDisabled: {
-    backgroundColor: '#cbd5e1',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  sendBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginLeft: 2,
-  },
-  charCount: {
-    fontSize: 11,
-    color: '#94a3b8',
-    textAlign: 'right',
-    marginTop: 6,
-    marginRight: 4,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 100,
-  },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#475569',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  modalText: {
-    fontSize: 16,
-    color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  messagePreview: {
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  previewText: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  previewImageText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 8,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  deleteButton: {
-    backgroundColor: '#ef4444',
-  },
-  cancelButtonText: {
-    color: '#475569',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  deleteButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  scoreboardButton: {
-      position: 'absolute',
-      bottom: 100,
-      right: 20,
-      backgroundColor: '#667eea',
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      justifyContent: 'center',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 8,
-      zIndex: 100,
-    },
-    scoreboardButtonText: {
-      fontSize: 24,
-      color: 'white',
-    },
-    messageWithScore: {
-      position: 'relative',
-    },
-    scoreBadge: {
-      position: 'absolute',
-      top: -8,
-      right: -8,
-      backgroundColor: '#10b981',
-      borderRadius: 12,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      minWidth: 50,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 3,
-    },
-    scoreBadgeText: {
-      color: 'white',
-      fontSize: 11,
-      fontWeight: 'bold',
-    },
-    rightSideButtons: {
-        position: 'absolute',
-        right: 16,
-        top: Platform.OS === 'ios' ? 100 : 80, // Adjust based on header height
-        zIndex: 1000,
-        alignItems: 'flex-end',
-      },
-
-      // Floating Score Button
-      floatingScoreButton: {
-        backgroundColor: '#667eea',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 6,
-        borderWidth: 2,
-        borderColor: 'rgba(255,255,255,0.3)',
-        minWidth: 80,
-      },
-
-      scoreButtonContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-      },
-
-      scoreButtonIcon: {
-        fontSize: 20,
-        marginRight: 8,
-      },
-
-      scoreButtonText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 14,
-      },
-
-      // Timer Button
-      timerButton: {
-        backgroundColor: '#f59e0b',
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 6,
-        borderWidth: 2,
-        borderColor: 'rgba(255,255,255,0.3)',
-      },
-
-      timerIcon: {
-        fontSize: 24,
-      },
-
-      // Live Score Indicator (Optional)
-      liveScoreIndicator: {
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderRadius: 16,
-        padding: 12,
-        marginTop: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        minWidth: 120,
-      },
-
-      liveScoreTitle: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#64748b',
-        marginBottom: 8,
-        textAlign: 'center',
-      },
-
-      liveScoreTeams: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-      },
-
-      liveScoreTeam: {
-        alignItems: 'center',
-        flex: 1,
-      },
-
-      liveScoreTeamIcon: {
-        fontSize: 16,
-        marginBottom: 4,
-      },
-
-      liveScoreTeamScore: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#1e293b',
-      },
-
-      // Updated messages container to accommodate floating buttons
-      messagesContainer: {
-        flex: 1,
-        paddingHorizontal: 16,
-        marginTop: 0, // Remove any top margin
-      },
-
-      // Make sure floating buttons don't overlap with messages
-      emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 100,
-        paddingHorizontal: 20, // Add horizontal padding
-      },
-      loadingContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 10,
-      },
-      loadingText: {
-        marginTop: 12,
-        color: '#64748b',
-        fontSize: 14,
-      },
-
-  messageRow: {
-      flexDirection: 'row',
-      marginVertical: 2, // Reduced from 4
-      paddingHorizontal: 8, // Reduced from 12
-    },
-    myMessageRow: {
-      justifyContent: 'flex-end',
-    },
-    theirMessageRow: {
-      justifyContent: 'flex-start',
-    },
-
-    // Avatar wrapper
-    avatarWrapper: {
-      width: 32,
-      justifyContent: 'flex-end', // Align avatar to bottom
-      marginBottom: 4,
-    },
-    avatar: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      borderWidth: 2,
-      borderColor: '#e2e8f0',
-    },
-
-    // Bubble wrapper
-    bubbleWrapper: {
-      maxWidth: '75%', // Reduced from 80%
-    },
-    myBubbleWrapper: {
-      alignItems: 'flex-end',
-    },
-
-    // Message bubble - CRITICAL FIXES HERE
-    messageBubble: {
-      padding: 10, // Reduced from 12
-      borderRadius: 18,
-      minWidth: 50,
-      maxWidth: '100%',
-      padding: 10,
-        borderRadius: 18,
-        backgroundColor: 'red',
-      // Remove these to eliminate extra space:
-      // shadowColor: '#000',
-      // shadowOffset: { width: 0, height: 2 },
-      // shadowOpacity: 0.1,
-      // shadowRadius: 8,
-      elevation: 2, // Reduced from 3
-    },
-    myBubble: {
-      backgroundColor: '#667eea',
-      borderBottomRightRadius: 4,
-    },
-    theirBubble: {
-      backgroundColor: '#fff',
-      borderBottomLeftRadius: 4,
-      borderWidth: 1,
-      borderColor: '#f1f5f9',
-    },
-    deletedBubble: {
-      backgroundColor: '#f1f5f9',
-      opacity: 0.7,
-      padding: 8, // Even smaller for deleted messages
-    },
-
-    // User info - compact
-    userInfo: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 4, // Reduced from 6-8
-      flexWrap: 'wrap',
-    },
-    username: {
-      fontSize: 13, // Reduced from 14
-      fontWeight: '600',
-      marginRight: 6,
-    },
-    stanceTag: {
-      paddingHorizontal: 6, // Reduced
-      paddingVertical: 2, // Reduced
-      borderRadius: 10,
-    },
-    stanceTagText: {
-      fontSize: 11, // Reduced
-      fontWeight: '600',
-    },
-
-    // My stance indicator - compact
-    myStance: {
-      marginBottom: 4,
-    },
-    myStanceText: {
-      fontSize: 11,
-      fontWeight: '600',
-      fontStyle: 'italic',
-    },
-
-    // AI tag - compact
-    aiTag: {
-      backgroundColor: '#fef2f2',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 10,
-      alignSelf: 'flex-start',
-      marginBottom: 4,
-    },
-    aiTagText: {
-      color: '#dc2626',
-      fontSize: 10,
-      fontWeight: '600',
-    },
-
-    // Score badge - smaller
-    scoreBadge: {
-      position: 'absolute',
-      top: -6,
-      right: -6,
-      borderRadius: 10,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      minWidth: 40,
-      zIndex: 1,
-    },
-    scoreBadgeText: {
-      color: 'white',
-      fontSize: 10,
-      fontWeight: 'bold',
-    },
-
-    // Content wrapper - ELIMINATE EXTRA SPACE
-    contentWrapper: {
-      // CRITICAL: Remove all margins/padding that cause space
-      margin: 0,
-      padding: 0,
-    },
-
-    // Message text - fix line height
-    messageText: {
-      fontSize: 15,
-      color: '#1e293b',
-      lineHeight: 20, // Reduced from 22
-      includeFontPadding: false,
-      paddingVertical: 0,
-      marginVertical: 0,
-      // Important: Remove textAlignVertical
-    },
-    myMessageText: {
-      color: '#fff',
-    },
-    systemText: {
-      color: '#64748b',
-      fontStyle: 'italic',
-      fontSize: 13,
-      textAlign: 'center',
-    },
-
-    // Message image
-    messageImage: {
-      width: 180, // Reduced
-      height: 135, // Reduced
-      borderRadius: 10,
-      marginTop: 6,
-    },
-
-    // Timestamp - positioned correctly
-    timestamp: {
-      fontSize: 10, // Reduced
-      color: 'rgba(100, 116, 139, 0.7)',
-      alignSelf: 'flex-end',
-      marginTop: 4, // Small margin only
-      marginBottom: 0, // No bottom margin
-    },
-    myTimestamp: {
-      color: 'rgba(255,255,255,0.7)',
-    },
-    deletedTimestamp: {
-      color: '#94a3b8',
-    },
-
-    // Options hint - smaller
-    optionsHint: {
-      fontSize: 9,
-      color: 'rgba(255,255,255,0.5)',
-      fontStyle: 'italic',
-      marginTop: 2,
-    },
-
-    // Deleted wrapper
-    deletedWrapper: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: 2, // Minimal padding
-    },
-    deletedIcon: {
-      fontSize: 12,
-      marginRight: 6,
-    },
-    deletedText: {
-      fontSize: 13,
-      color: '#94a3b8',
-      fontStyle: 'italic',
-    },
-
-    loadingOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
-      },
-      loadingText: {
-        marginTop: 12,
-        color: 'white',
-        fontSize: 16,
-      },
-  refreshButton: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    padding: 10,
-    alignItems: 'center',
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  refreshButtonText: {
-    color: '#64748b',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  timerContainer: {
-      backgroundColor: '#ffffff',
-      marginHorizontal: 16,
-      marginTop: 8,
-      marginBottom: 8,
-      borderRadius: 16,
-      padding: 16,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      elevation: 4,
-      borderWidth: 1,
-      borderColor: '#e2e8f0',
-    },
-    timerHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 12,
-    },
-    timerIcon: {
-      fontSize: 20,
-      marginRight: 8,
-    },
-    timerTitle: {
-      fontSize: 16,
-      fontWeight: 'bold',
-      color: '#1e293b',
-      flex: 1,
-    },
-    timerWarning: {
-      backgroundColor: '#fef3c7',
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 12,
-    },
-    timerWarningText: {
-      fontSize: 12,
-      color: '#92400e',
-      fontWeight: '500',
-    },
-    timerProgressContainer: {
-      marginBottom: 12,
-    },
-    timerProgressBar: {
-      height: 8,
-      backgroundColor: '#e2e8f0',
-      borderRadius: 4,
-      overflow: 'hidden',
-      marginBottom: 8,
-    },
-    timerProgressFill: {
-      height: '100%',
-      borderRadius: 4,
-    },
-    timerInfo: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    timerTime: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: '#1e293b',
-    },
-    timerElapsed: {
-      fontSize: 14,
-      color: '#64748b',
-    },
-    timerStatus: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    timerStatusDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      marginRight: 6,
-    },
-    timerStatusText: {
-      fontSize: 14,
-      color: '#475569',
-    },
-
-    // Floating Timer Button (alternative compact view)
-    floatingTimerButton: {
-      position: 'absolute',
-      right: 16,
-      top: 100,
-      backgroundColor: '#1e293b',
-      borderRadius: 20,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 6,
-      zIndex: 1000,
-    },
-    timerButtonIcon: {
-      fontSize: 18,
-      color: 'white',
-      marginRight: 8,
-    },
-    timerButtonText: {
-      color: 'white',
-      fontWeight: 'bold',
-      fontSize: 14,
-    },
-    endDebateButtonDisabled: {
-      backgroundColor: '#94a3b8',
-      opacity: 0.7,
-    },
-    connectionMonitor: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 8,
-      backgroundColor: '#10b981',
-    },
-    connectionMonitorConnecting: {
-      backgroundColor: '#f59e0b',
-    },
-    connectionMonitorDisconnected: {
-      backgroundColor: '#ef4444',
-    },
-    connectionMonitorDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      marginRight: 8,
-    },
-    connectionMonitorText: {
-      color: 'white',
-      fontSize: 12,
-      fontWeight: '500',
-    },
-
-    timerInactiveText: {
-      color: '#64748b',
-      fontSize: 14,
-      textAlign: 'center',
-      paddingVertical: 8,
-    },
 });
