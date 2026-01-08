@@ -2130,13 +2130,6 @@ app.post('/api/debate/:roomId/timer/start', async (req, res) => {
     const isCreator = room.createdBy.toString() === userId;
     const isModerator = user && user.isModerator;
 
-    if (!isCreator && !isModerator) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only room creator or moderators can start timer'
-      });
-    }
-
     // Get or create debate result
     let debateResult = await DebateResult.findOne({ roomId });
     if (!debateResult) {

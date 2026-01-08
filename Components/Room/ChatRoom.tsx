@@ -563,6 +563,7 @@ export default function ChatRoom({ route }) {
   const [userImages, setUserImages] = useState({});
   // In your ChatRoom component's state
   const [messageEvaluation, setMessageEvaluation] = useState(null);
+  const [loadingTimer, setLoadingTimer] = useState(false);
   // Stance-related state
   const [showStanceModal, setShowStanceModal] = useState(false);
   const [userStance, setUserStance] = useState(null);
@@ -662,8 +663,9 @@ export default function ChatRoom({ route }) {
   const startDebateTimer = useCallback((totalDuration = 1800) => {
     console.log('⏰ Starting debate timer:', totalDuration);
 
-    // Clear any existing timer
+    // Clear any existing timer FIRST
     if (timerInterval) {
+      console.log('🔄 Clearing existing timer interval');
       clearInterval(timerInterval);
       setTimerInterval(null);
     }
@@ -678,31 +680,30 @@ export default function ChatRoom({ route }) {
       remainingSeconds: totalDuration,
     }));
 
-    // Start interval
+    // Create new interval
     const interval = setInterval(() => {
       setDebateTimer(prev => {
         if (!prev.startTime || !prev.isActive) {
-
-            clearInterval(interval);
-            return prev ;
-            }
+          console.log('⏰ Timer not active, clearing interval');
+          clearInterval(interval);
+          return prev;
+        }
 
         const now = new Date();
         const elapsedMs = now.getTime() - prev.startTime.getTime();
         const elapsedSeconds = Math.floor(elapsedMs / 1000);
         const remainingSeconds = Math.max(0, prev.totalDuration - elapsedSeconds);
 
-        // Check if debate can be ended (after minimum time)
+        // Check if debate can be ended
         const minEndTimeSeconds = minEndTimeMinutes * 60;
         const canEnd = elapsedSeconds >= minEndTimeSeconds;
 
-
-        if (canEnd !== canEndDebate) {
-            setCanEndDebate(canEnd);
-        }
+        // Update canEndDebate state
+        setCanEndDebate(canEnd);
 
         // Auto-end if time is up
         if (remainingSeconds <= 0) {
+          console.log('⏰ Time up, clearing interval');
           clearInterval(interval);
           handleTimeUp();
           return {
@@ -721,11 +722,16 @@ export default function ChatRoom({ route }) {
       });
     }, 1000);
 
+    console.log('⏰ Timer interval set');
     setTimerInterval(interval);
 
-    // Initial check for end permission
-    setCanEndDebate(false); // Can't end immediately
-  }, [timerInterval, minEndTimeMinutes, canEndDebate]);
+    // Return cleanup function
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [timerInterval, minEndTimeMinutes, handleTimeUp]);
 
     // Add this cleanup useEffect
     useEffect(() => {
@@ -792,55 +798,48 @@ export default function ChatRoom({ route }) {
 
   // Fetch debate timer from server
   const fetchDebateTimer = useCallback(async () => {
+    // Add debouncing or flag to prevent multiple calls
+    if (loadingTimer) return;
+
     try {
+      setLoadingTimer(true);
       console.log('🕒 Fetching debate timer for room:', roomId);
       const response = await axios.get(`${SERVER_URL}/api/debate/${roomId}/timer`);
 
       if (response.data.success) {
         const { elapsedSeconds, totalDuration, startTime, isActive, remainingSeconds } = response.data;
-        console.log('📊 Timer data received:', { elapsedSeconds, totalDuration, isActive });
 
+        // Only update if values are different
         setDebateTimer(prev => {
-          // Don't update if values are the same to prevent re-renders
-          if (
-            prev.elapsedSeconds === elapsedSeconds &&
-            prev.totalDuration === totalDuration &&
-            prev.isActive === isActive &&
-            prev.remainingSeconds === remainingSeconds
-          ) {
-            return prev;
-          }
-
-          return {
+          const newTimer = {
             elapsedSeconds: elapsedSeconds || 0,
             totalDuration: totalDuration || 1800,
             isActive: isActive || false,
             startTime: startTime ? new Date(startTime) : null,
             remainingSeconds: remainingSeconds || Math.max(0, (totalDuration || 1800) - (elapsedSeconds || 0)),
           };
-        });
 
-        // Start local timer only if active and not already running
-        if (isActive && (remainingSeconds > 0 || totalDuration - elapsedSeconds > 0)) {
-          if (!timerInterval) {
-            console.log('⏰ Starting local timer with duration:', totalDuration);
-            startDebateTimer(totalDuration);
+          // Start local timer only if active and not already running
+          if (isActive && (remainingSeconds > 0 || totalDuration - elapsedSeconds > 0)) {
+            if (!timerInterval) {
+              console.log('⏰ Starting local timer from server data');
+              startDebateTimer(totalDuration);
+            }
+          } else if (timerInterval) {
+            // Clear timer if debate is not active
+            clearInterval(timerInterval);
+            setTimerInterval(null);
           }
-        } else if (timerInterval) {
-          // Clear timer if debate is not active
-          clearInterval(timerInterval);
-          setTimerInterval(null);
-        }
 
-        // Check if debate can be ended
-        if (isActive && elapsedSeconds >= 300) { // 5 minutes
-          setCanEndDebate(true);
-        }
+          return newTimer;
+        });
       }
     } catch (error) {
       console.error('Error fetching debate timer:', error);
+    } finally {
+      setLoadingTimer(false);
     }
-  }, [roomId, timerInterval, startDebateTimer]); // Keep dependencies minimal
+  }, [roomId, timerInterval, startDebateTimer]);
 
   const checkRoomStatus = async () => {
     try {
@@ -1011,6 +1010,36 @@ useEffect(() => {
         }
       });
 
+      socket.on('debate_timer_started', (data) => {
+          console.log('⏰ Timer started via socket:', data);
+          if (data.roomId === roomId) {
+            // Don't fetch immediately, let server handle sync
+            setTimeout(() => fetchDebateTimer(), 1000); // Delay to avoid race
+          }
+        });
+
+        socket.on('debate_timer_update', (data) => {
+          console.log('⏰ Timer update via socket:', data);
+          if (data.roomId === roomId) {
+            // Update state directly without starting new timer
+            setDebateTimer(prev => ({
+              ...prev,
+              elapsedSeconds: data.elapsedSeconds || 0,
+              totalDuration: data.totalDuration || 1800,
+              isActive: data.isActive || false,
+              startTime: data.startTime ? new Date(data.startTime) : null,
+              remainingSeconds: data.remainingSeconds || 0,
+            }));
+
+            // Only update canEndDebate, don't start timer
+            const minEndTimeSeconds = minEndTimeMinutes * 60;
+            const canEnd = data.elapsedSeconds >= minEndTimeSeconds;
+            if (canEnd !== canEndDebate) {
+              setCanEndDebate(canEnd);
+            }
+          }
+        });
+
       socket.on('room_closed', (data) => {
         console.log('🚫 Room closed:', data);
         if (data.roomId === roomId) {
@@ -1036,9 +1065,11 @@ useEffect(() => {
     socket.off('argument_evaluated');
     socket.off('scoreboard_updated');
     socket.off('debate_settings_updated');
+    socket.off('debate_timer_started') ;
+    socket.off("debater_timer_update");
     socket.off('room_closed');
   };
-}, [roomId,userId,fetchScoreboard,handleDebateEnded,navigation]);
+}, [roomId,userId,fetchScoreboard,handleDebateEnded,navigation,minEndTimeMinutes ,canEndDebate]);
 
 // Update handleMessage function
 const handleMessage = async () => {
@@ -1093,12 +1124,14 @@ const showWinnerModal = (winnerData) => {
     `${winnerData.awards?.bestArgument ?
       `Best Argument: ${winnerData.awards.bestArgument.username} (${winnerData.awards.bestArgument.score}pts)` : ''}`,
     [
-      { text: 'View Details', onPress: () => {navigation.navigate('DebateResults', {
+      { text: 'View Details', onPress: () => {
+
+          navigation.navigate('DebateResults', {
                                                            roomId: roomId,
-                                                           winner: winnerData.winner,
-                                                           scores: debateScores,
-                                                           leaderboard: leaderboard
-                                                         });} },
+             winner: winnerData.winner,
+             scores: debateScores,
+             leaderboard: leaderboard
+          });} },
       { text: 'Continue Chat' }
     ]
   );
@@ -1231,8 +1264,18 @@ const endDebate = useCallback(async () => {
 
   useEffect(() => {
     return () => {
+      // Clean up timer interval
       if (timerInterval) {
+        console.log('🧹 Cleaning up timer interval on unmount');
         clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
+
+      // Clean up socket connection
+      if (socketRef.current) {
+        console.log('🧹 Disconnecting socket on unmount');
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
     };
   }, [timerInterval]);
@@ -1600,6 +1643,12 @@ const endDebate = useCallback(async () => {
   };
 
   const proceedWithMessage = async (messageText, imageData, isAIDetected = false) => {
+    // CRITICAL: Check socket before proceeding
+    if (!socketRef.current || !socketRef.current.connected) {
+      Alert.alert('Connection Lost', 'Please reconnect to the server');
+      return;
+    }
+
     const currentUserImage = user?.user_image || userImage || '';
     const cleanedText = messageText
       .replace(/\n\s*\n\s*\n/g, '\n\n')
@@ -1617,102 +1666,122 @@ const endDebate = useCallback(async () => {
       time: new Date().toISOString(),
       aiDetected: isAIDetected,
       aiConfidence: isAIDetected ? pendingMessage?.aiDetection?.confidence : 0,
-      userStance: userStance // Include stance in message
+      userStance: userStance
     };
 
     console.log('Sending message with stance:', userStance);
 
-    socketRef.current.emit('send_message', messageData, async (ack) => {
-      console.log('Server ACK:', ack);
-      if (ack && ack.status === "ok") {
-        // Check if timer needs to be started (first argument)
-        if (!debateTimer.isActive) {
+    // Wrap emit in try-catch and check socket
+    try {
+      if (!socketRef.current) {
+        throw new Error('Socket not initialized');
+      }
+
+      socketRef.current.emit('send_message', messageData, async (ack) => {
+        console.log('Server ACK:', ack);
+
+        if (!socketRef.current) {
+          console.error('Socket lost during ACK processing');
+          return;
+        }
+
+        if (ack && ack.status === "ok") {
+          // Check if timer needs to be started (first argument)
+          if (!debateTimer.isActive) {
+            try {
+              console.log('⏰ Attempting to start timer for first argument...');
+              const timerResponse = await axios.post(`${SERVER_URL}/api/debate/${roomId}/timer/start`, {
+                userId: userId,
+                duration: 1800 // 30 minutes
+              });
+
+              if (timerResponse.data.success) {
+                console.log('✅ Timer started successfully');
+              }
+            } catch (timerError) {
+              console.error('Error starting timer:', timerError);
+            }
+          }
+
+          // Then evaluate the argument
+          const actualMessageId = ack.id;
           try {
-            console.log('⏰ Attempting to start timer for first argument...');
-            const timerResponse = await axios.post(`${SERVER_URL}/api/debate/${roomId}/timer/start`, {
+            console.log("Evaluation Started ...");
+            const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
+              argument: cleanedText,
+              team: (userStance.id || userStance).toLowerCase(),
+              roomId: roomId,
               userId: userId,
-              duration: 1800 // 30 minutes
+              username: username,
+              messageId: actualMessageId
             });
 
-            if (timerResponse.data.success) {
-              console.log('✅ Timer started successfully');
-              // The socket event will update the timer
-            }
-          } catch (timerError) {
-            console.error('Error starting timer:', timerError);
-            // Don't block message sending if timer fails
-          }
-        }
+            if (evalResponse.data.success) {
+              const { evaluation, currentStandings, winner } = evalResponse.data;
 
-        // Then evaluate the argument
-        const actualMessageId = ack.id;
-        try {
-          console.log("Evaluation Started ...");
-          const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-            argument: cleanedText,
-            team: (userStance.id || userStance).toLowerCase(),
-            roomId: roomId,
-            userId: userId,
-            username: username,
-            messageId: actualMessageId
-          });
+              // Update local scores
+              if (currentStandings) {
+                setDebateScores(currentStandings);
+              }
 
-          if (evalResponse.data.success) {
-            const { evaluation, currentStandings, winner } = evalResponse.data;
-
-            // Update local scores
-            if (currentStandings) {
-              setDebateScores(currentStandings);
-            }
-
-            // REFRESH LEADERBOARD AFTER EVALUATION
-            fetchScoreboard();
-
-            // Show evaluation to user
-            Alert.alert(
-              '📊 Argument Evaluated!',
-              `Your argument scored: ${evaluation.totalScore}/60\n\n` +
-              `Clarity: ${evaluation.clarity}/10\n` +
-              `Relevance: ${evaluation.relevance}/10\n` +
-              `Logic: ${evaluation.logic}/10\n` +
-              `Evidence: ${evaluation.evidence}/10\n` +
-              `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
-              `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
-              `Feedback: ${evaluation.feedback}`,
-              [{ text: 'OK' }]
-            );
-
-            // Update message with evaluation score
-            const updatedMessageData = {
-              ...messageData,
-              evaluationId: evaluation.evaluationId,
-              evaluationScore: evaluation.totalScore
-            };
-
-            // Re-emit with evaluation data
-            socketRef.current.emit('update_message_evaluation', updatedMessageData);
-
-            // Check if debate ended
-            if (winner && winner.winner !== 'undecided') {
-              setWinner(winner.winner);
-              setDebateEnded(true);
-              // Refresh leaderboard when debate ends
+              // REFRESH LEADERBOARD AFTER EVALUATION
               fetchScoreboard();
-            }
-          }
-        } catch (error) {
-          console.error('Evaluation error:', error);
-          // Continue without evaluation
-        }
 
-        setText('');
-      }
-      if (ack && ack.error) {
-        Alert.alert('Error', 'Failed to send message');
-      } else if (isAIDetected) {
-        handleAIDetection();
-      }
-    });
+              // Show evaluation to user
+              Alert.alert(
+                '📊 Argument Evaluated!',
+                `Your argument scored: ${evaluation.totalScore}/60\n\n` +
+                `Clarity: ${evaluation.clarity}/10\n` +
+                `Relevance: ${evaluation.relevance}/10\n` +
+                `Logic: ${evaluation.logic}/10\n` +
+                `Evidence: ${evaluation.evidence}/10\n` +
+                `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
+                `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
+                `Feedback: ${evaluation.feedback}`,
+                [{ text: 'OK' }]
+              );
+
+              // Update message with evaluation score - CHECK SOCKET FIRST
+              const updatedMessageData = {
+                ...messageData,
+                evaluationId: evaluation.evaluationId,
+                evaluationScore: evaluation.totalScore
+              };
+
+              // CRITICAL FIX: Check socket before emitting
+              if (socketRef.current && socketRef.current.connected) {
+                socketRef.current.emit('update_message_evaluation', updatedMessageData);
+              } else {
+                console.warn('Socket not available for evaluation update');
+                // Optionally queue this update for when socket reconnects
+              }
+
+              // Check if debate ended
+              if (winner && winner.winner !== 'undecided') {
+                setWinner(winner.winner);
+                setDebateEnded(true);
+                // Refresh leaderboard when debate ends
+                fetchScoreboard();
+              }
+            }
+          } catch (error) {
+            console.error('Evaluation error:', error);
+            // Continue without evaluation
+          }
+
+          setText('');
+        }
+        if (ack && ack.error) {
+          Alert.alert('Error', 'Failed to send message');
+        } else if (isAIDetected) {
+          handleAIDetection();
+        }
+      });
+
+    } catch (error) {
+      console.error('Socket emit error:', error);
+      Alert.alert('Connection Error', 'Failed to send message. Please check your connection.');
+    }
 
     setText('');
     setPendingMessage(null);
@@ -2332,22 +2401,6 @@ const endDebate = useCallback(async () => {
           <Text style={styles.connectionText}>
             {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
           </Text>
-        </View>
-
-        {/* Connection Status Monitor */}
-        <View style={[
-          styles.connectionMonitor,
-          isConnecting && styles.connectionMonitorConnecting,
-          !isConnected && !isConnecting && styles.connectionMonitorDisconnected
-        ]}>
-          <View style={[
-            styles.connectionMonitorDot,
-            isConnected ? styles.connectedDot : styles.disconnectedDot
-          ]} />
-          <Text style={styles.connectionMonitorText}>
-            {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
-          </Text>
-          {isConnecting && <ActivityIndicator size="small" color="#fff" style={{ marginLeft: 8 }} />}
         </View>
 
         {/* Timer Display */}

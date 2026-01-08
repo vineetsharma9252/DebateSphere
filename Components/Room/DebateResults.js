@@ -204,7 +204,7 @@ export default function DebateResults() {
         <View style={styles.actionsCard}>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => navigation.navigate('Home')}
+            onPress={() => navigation.navigate('Dashboard')}
           >
             <Text style={styles.actionButtonText}>Back to Home</Text>
           </TouchableOpacity>
