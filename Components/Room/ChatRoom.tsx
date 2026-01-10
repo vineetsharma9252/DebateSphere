@@ -1892,16 +1892,23 @@ useEffect(() => {
   };
 
   const handleTimerUpdate = (data) => {
-    if (data.roomId === roomId) {
-      setDebateTimer(prev => ({
-        ...prev,
-        elapsedSeconds: data.elapsedSeconds || 0,
-        remainingSeconds: data.remainingSeconds || 0,
-        isActive: data.isActive || false,
-        totalDuration: data.totalDuration || prev.totalDuration,
-      }));
-    }
-  };
+      if (data.roomId === roomId) {
+        console.log('⏰ Timer update:', data);
+
+        setDebateTimer(prev => ({
+          ...prev,
+          elapsedSeconds: data.elapsedSeconds || 0,
+          totalDuration: data.totalDuration || 1800,
+          remainingSeconds: data.remainingSeconds || 0,
+          isActive: data.isActive || false
+        }));
+
+        // Check if debate should auto-end
+        if (data.remainingSeconds <= 0 && data.isActive) {
+          console.log('⏰ Time expired - waiting for auto-evaluation');
+        }
+      }
+    };
 
   const handleScoreUpdated = (data) => {
     if (data.roomId === roomId && data.teamScores) {
@@ -1909,20 +1916,48 @@ useEffect(() => {
     }
   };
 
-  const handleDebateEnded = (data) => {
-    if (data.roomId === roomId) {
-      console.log('🏆 Debate ended via socket:', data);
-      setDebateEnded(true);
-      setCanSendMessages(false);
-      setWinner(data.winner || 'undecided');
+  const handleDebateEnded = async (data) => {
+      if (data.roomId === roomId) {
+        console.log('🏆 Debate ended event:', data);
 
-      if (data.stats) {
-        setDebateScores(data.stats);
+        setDebateEnded(true);
+        setCanSendMessages(false);
+        setWinner(data.winner || 'undecided');
+
+        if (data.stats) {
+          setDebateScores(data.stats);
+        }
+
+        // Fetch final scoreboard
+        await fetchScoreboard();
+
+        // Show winner modal
+        Alert.alert(
+          '🏆 Debate Concluded!',
+          `The debate has ended.\nWinner: ${(data.winner || 'undecided').toUpperCase()}\n` +
+          `Reason: ${data.reason || 'Time expired'}`,
+          [
+            {
+              text: 'View Results',
+              onPress: () => {
+                navigation.navigate('DebateResults', {
+                  roomId,
+                  winner: data.winner,
+                  scores: data.stats || debateScores,
+                  leaderboard: leaderboard,
+                  title: title,
+                  desc: desc
+                });
+              }
+            },
+            {
+              text: 'OK',
+              style: 'cancel'
+            }
+          ]
+        );
       }
-
-      fetchScoreboard();
-    }
-  };
+    };
 
   const handleArgumentEvaluated = (data) => {
     if (data.roomId === roomId && data.userId !== userId) {
@@ -2236,141 +2271,182 @@ useEffect(() => {
     proceedWithMessage(messageText, imageData);
   };
 
-  const proceedWithMessage = async (messageText, imageData, isAIDetected = false) => {
-    if (!canSendMessages) {
-      Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
-      return;
+const proceedWithMessage = async (messageText, imageData, isAIDetected = false) => {
+  if (!canSendMessages) {
+    Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
+    return;
+  }
+
+  // CRITICAL: Check socket before proceeding
+  if (!socketRef.current || !socketRef.current.connected) {
+    Alert.alert('Connection Lost', 'Please reconnect to the server');
+    return;
+  }
+
+  const currentUserImage = user?.user_image || userImage || '';
+  const cleanedText = messageText
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    .replace(/^\s+|\s+$/g, '')
+    .replace(/\s+$/m, '')  // Fixed regex for trailing whitespace
+    .replace(/\n{3,}/g, '\n\n');
+
+  const messageData = {
+    text: cleanedText,
+    image: imageData,
+    sender: username,
+    userId: userId,
+    userImage: currentUserImage,
+    roomId,
+    time: new Date().toISOString(),
+    aiDetected: isAIDetected,
+    aiConfidence: isAIDetected ? (pendingMessage?.aiDetection?.confidence || 0) : 0,
+    userStance: userStance
+  };
+
+  console.log('Sending message with stance:', userStance);
+
+  try {
+    // Send message with retry logic
+    const ack = await sendMessageWithRetry(messageData, 3);
+    console.log('✅ Message sent successfully, ACK:', ack);
+
+    const actualMessageId = ack.id || ack.messageId;
+
+    // Only trigger evaluation if text is meaningful
+    if (actualMessageId && cleanedText.trim().length > 0) {
+      // Fire-and-forget evaluation with longer delay & timeout
+      triggerEvaluation(actualMessageId, cleanedText, 15000); // 15s delay
     }
 
-    // CRITICAL: Check socket before proceeding
-    if (!socketRef.current || !socketRef.current.connected) {
-      Alert.alert('Connection Lost', 'Please reconnect to the server');
-      return;
+    setText('');
+    if (isAIDetected) {
+      handleAIDetection();
     }
 
-    const currentUserImage = user?.user_image || userImage || '';
-    const cleanedText = messageText
-      .replace(/\n\s*\n\s*\n/g, '\n\n')
-      .replace(/^\s+|\s+$/g, '')
-      .replace(/\s+$/gm, '')
-      .replace(/\n{3,}/g, '\n\n');
+  } catch (error) {
+    console.error('Socket emit error:', error);
+    Alert.alert(
+      'Connection Error',
+      'Failed to send message. Please check your connection.',
+      [{ text: 'Retry', onPress: () => proceedWithMessage(messageText, imageData, isAIDetected) }]
+    );
 
-    const messageData = {
-      text: cleanedText,
-      image: imageData,
-      sender: username,
-      userId: userId,
-      userImage: currentUserImage,
-      roomId,
-      time: new Date().toISOString(),
-      aiDetected: isAIDetected,
-      aiConfidence: isAIDetected ? pendingMessage?.aiDetection?.confidence : 0,
-      userStance: userStance
-    };
+    // Auto-reconnect
+    if (socketRef.current && !socketRef.current.connected) {
+      socketRef.current.connect();
+    }
+  }
 
-    console.log('Sending message with stance:', userStance);
+  setPendingMessage(null);
+};
 
+// Helper: Retry message sending
+const sendMessageWithRetry = async (messageData, maxRetries = 3) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // CRITICAL FIX: Use await with a promise instead of callback
       const emitPromise = new Promise((resolve, reject) => {
         if (!socketRef.current) {
           reject(new Error('Socket not initialized'));
           return;
         }
 
+        const timeoutId = setTimeout(() => {
+          reject(new Error(`Socket timeout after ${attempt}/${maxRetries}`));
+        }, 10000); // 10s per attempt
+
         socketRef.current.emit('send_message', messageData, (ack) => {
+          clearTimeout(timeoutId);
           if (!ack) {
-            reject(new Error('No response from server'));
+            reject(new Error('No ACK from server'));
             return;
           }
-
           if (ack.status === "ok") {
             resolve(ack);
           } else {
-            reject(new Error(ack.error || 'Failed to send message'));
+            reject(new Error(ack.error || 'Server rejected message'));
           }
         });
       });
 
-      const ack = await emitPromise;
-      console.log('✅ Message sent successfully, ACK:', ack);
+      return await emitPromise;
+    } catch (error) {
+      console.log(`Attempt ${attempt} failed:`, error.message);
+      if (attempt === maxRetries) throw error;
 
-      // REMOVE the timer start code from here - let the server handle it
-      // The server will automatically start the timer on first argument
+      // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    }
+  }
+};
 
-      // Then evaluate the argument
-      const actualMessageId = ack.id || ack.messageId;
-      if (actualMessageId && cleanedText.trim().length > 0) {
-        try {
-          console.log("📝 Starting evaluation for message:", actualMessageId);
-          const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-            argument: cleanedText,
-            team: (userStance.id || userStance).toLowerCase(),
-            roomId: roomId,
-            userId: userId,
-            username: username,
-            messageId: actualMessageId
-          }, {
-            timeout: 30000 // 30 second timeout
-          });
+// Helper: Fire-and-forget evaluation with error handling
+const triggerEvaluation = async (messageId, argument, delay = 15000) => {
+  setTimeout(async () => {
+    try {
+      console.log('📝 Starting evaluation for message:', messageId);
 
-          if (evalResponse.data.success) {
-            const { evaluation, currentStandings, winner } = evalResponse.data;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
 
-            // Update local scores
-            if (currentStandings) {
-              setDebateScores(currentStandings);
-            }
+      const evalResponse = await axios.post(
+        `${SERVER_URL}/evaluate`,
+        {
+          argument: argument.substring(0, 800), // Limit size
+          team: (userStance?.id || userStance || 'neutral').toLowerCase(),
+          roomId,
+          userId,
+          username,
+          messageId
+        },
+        {
+          signal: controller.signal,
+          timeout: 45000
+        }
+      );
 
-            // REFRESH LEADERBOARD AFTER EVALUATION
-            fetchScoreboard();
+      clearTimeout(timeoutId);
 
-            // Show evaluation to user (non-blocking)
-            setTimeout(() => {
-              Alert.alert(
-                '📊 Argument Evaluated!',
-                `Your argument scored: ${evaluation.totalScore}/60\n\n` +
-                `Clarity: ${evaluation.clarity}/10\n` +
-                `Relevance: ${evaluation.relevance}/10\n` +
-                `Logic: ${evaluation.logic}/10\n` +
-                `Evidence: ${evaluation.evidence}/10\n` +
-                `Persuasiveness: ${evaluation.persuasiveness}/10\n` +
-                `Rebuttal: ${evaluation.rebuttal}/10\n\n` +
-                `Feedback: ${evaluation.feedback}`,
-                [{ text: 'OK' }]
-              );
-            }, 500);
+      if (evalResponse.data.success) {
+        const { evaluation, currentStandings, winner } = evalResponse.data;
 
-            // Check if debate ended
-            if (winner && winner.winner !== 'undecided') {
-              setWinner(winner.winner);
-              setDebateEnded(true);
-              fetchScoreboard();
-            }
-          }
-        } catch (error) {
-          console.error('Evaluation error:', error);
-          // Don't show error for evaluation failures
+        // Update UI optimistically
+        if (currentStandings) {
+          setDebateScores(currentStandings);
+        }
+        fetchScoreboard();
+
+        // Show results after short delay
+        setTimeout(() => {
+          Alert.alert(
+            '📊 Argument Evaluated!',
+            `Score: ${evaluation.totalScore}/60\n\n` +
+            `Clarity: ${evaluation.clarity}/10 | Logic: ${evaluation.logic}/10\n` +
+            `Relevance: ${evaluation.relevance}/10 | Evidence: ${evaluation.evidence}/10\n` +
+            `Persuasiveness: ${evaluation.persuasiveness}/10 | Rebuttal: ${evaluation.rebuttal}/10\n\n` +
+            `"${evaluation.feedback}"`,
+            [{ text: 'OK' }]
+          );
+        }, 500);
+
+        // Handle debate end
+        if (winner?.winner && winner.winner !== 'undecided') {
+          setWinner(winner.winner);
+          setDebateEnded(true);
+          fetchScoreboard();
         }
       }
-
-      setText('');
-      if (isAIDetected) {
-        handleAIDetection();
-      }
-
     } catch (error) {
-      console.error('Socket emit error:', error);
-      Alert.alert('Connection Error', 'Failed to send message. Please check your connection.');
-
-      // Try to reconnect
-      if (socketRef.current) {
-        socketRef.current.connect();
+      if (error.name !== 'CanceledError') {
+        console.error('Evaluation failed:', error.message);
+        // Silent fail - server will handle & broadcast results
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Evaluation in progress...', ToastAndroid.SHORT);
+        }
       }
     }
+  }, delay);
+};
 
-    setPendingMessage(null);
-  };
 
   const handleAIDetection = () => {
     setConsecutiveAIDetections(prev => {
@@ -2990,6 +3066,7 @@ useEffect(() => {
 
         {/* Timer Display */}
 
+        // Update your timer UI in the ChatRoom component:
         {(debateTimer.totalDuration > 0) && (
           <View style={styles.timerContainer}>
             <View style={styles.timerHeader}>
@@ -2997,6 +3074,13 @@ useEffect(() => {
               <Text style={styles.timerTitle}>
                 {debateTimer.isActive ? 'Debate Timer' : 'Debate Not Started'}
               </Text>
+              {debateTimer.remainingSeconds <= 60 && debateTimer.isActive && (
+                <View style={styles.timerWarning}>
+                  <Text style={styles.timerWarningText}>
+                    ⚠️ Ending soon!
+                  </Text>
+                </View>
+              )}
             </View>
 
             {debateTimer.isActive ? (
@@ -3007,9 +3091,9 @@ useEffect(() => {
                       style={[
                         styles.timerProgressFill,
                         {
-                          width: `${Math.min(100, calculateProgress())}%`,
-                          backgroundColor: calculateProgress() > 80 ? '#ef4444' :
-                                         calculateProgress() > 60 ? '#f59e0b' : '#10b981'
+                          width: `${Math.min(100, (debateTimer.elapsedSeconds / debateTimer.totalDuration) * 100)}%`,
+                          backgroundColor: debateTimer.remainingSeconds <= 300 ? '#ef4444' :
+                                         debateTimer.remainingSeconds <= 600 ? '#f59e0b' : '#10b981'
                         }
                       ]}
                     />
@@ -3025,17 +3109,16 @@ useEffect(() => {
                   </View>
                 </View>
 
-                <View style={styles.timerStatus}>
-                  <View style={[
-                    styles.timerStatusDot,
-                    { backgroundColor: debateTimer.isActive ? '#10b981' : '#6b7280' }
-                  ]} />
-                  <Text style={styles.timerStatusText}>
-                    {debateTimer.isActive ? 'Active' : 'Not Started'}
-                    {!canEndDebate && ' • Cannot end yet'}
-                  </Text>
-                </View>
+                <Text style={styles.timerStatusText}>
+                  {debateTimer.remainingSeconds <= 0 ?
+                    'Evaluating results...' :
+                    `Ends in: ${formatTime(debateTimer.remainingSeconds)}`}
+                </Text>
               </>
+            ) : debateEnded ? (
+              <Text style={styles.timerEndedText}>
+                🏁 Debate ended • Winner: {(winner || 'undecided').toUpperCase()}
+              </Text>
             ) : (
               <Text style={styles.timerInactiveText}>
                 Timer will start when first argument is submitted

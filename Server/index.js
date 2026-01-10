@@ -101,19 +101,23 @@ io.on("connection", (socket) => {
     }
 
     const debateResult = await DebateResult.findOne({ roomId });
-        if (debateResult && debateResult.isActive === false) {
-          socket.emit('room_closed', {
+        if (debateResult && debateResult.endTime) {
+          socket.emit('debate_ended', {
             roomId,
-            message: 'This debate has ended',
-            winner: debateResult.winningTeam
+            winner: debateResult.winningTeam,
+            margin: debateResult.marginOfVictory,
+            endedAt: debateResult.endTime,
+            isActive: false
           });
           return;
-    }
-    if (debateResult && debateResult.startTime) {
+        }
+    if (debateResult && debateResult.isActive && debateResult.startTime) {
         const now = new Date();
         const elapsedMs = now.getTime() - debateResult.startTime.getTime();
         const elapsedSeconds = Math.floor(elapsedMs / 1000);
         const totalDuration = debateResult.settings?.maxDuration || 1800;
+
+        const remainingSeconds = Math.max(0, totalDuration - elapsedSeconds);
 
         socket.emit('debate_timer_update', {
           roomId,
@@ -124,6 +128,23 @@ io.on("connection", (socket) => {
           remainingSeconds: Math.max(0, totalDuration - elapsedSeconds)
         });
       }
+
+      if (remainingSeconds > 0 && debateResult.isActive) {
+              setTimeout(async () => {
+                try {
+                  const winnerData = await determineWinner(roomId, true);
+                  if (winnerData) {
+                    io.to(roomId).emit('debate_ended', {
+                      roomId,
+                      ...winnerData,
+                      reason: 'Time expired'
+                    });
+                  }
+                } catch (error) {
+                  console.error('Error auto-ending debate:', error);
+                }
+              }, remainingSeconds * 1000);
+            }
 
     console.log(`Socket ${socket.id} joined room ${roomId}`);
 
@@ -1588,6 +1609,40 @@ app.put("/api/update_desc", async (req, res) => {
     }
 });
 
+// Add this function to your server
+app.post('/api/debate/:roomId/evaluate', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const winnerData = await determineWinner(roomId, true);
+
+    if (winnerData) {
+      // Broadcast to all users
+      io.to(roomId).emit('debate_ended', {
+        roomId,
+        ...winnerData,
+        reason: 'Manual evaluation'
+      });
+
+      res.json({
+        success: true,
+        ...winnerData
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Could not determine winner'
+      });
+    }
+  } catch (error) {
+    console.error('Evaluation error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/save_user_stance', async (req, res) => {
   try {
     const { roomId, userId, username, stance, stanceLabel, userImage } = req.body;
@@ -2002,69 +2057,135 @@ function calculateAwardsFromArguments(arguments) {
   };
 }
 
-// Function to determine winner based on multiple criteria
-async function determineWinner(roomId) {
-  const debateResult = await DebateResult.findOne({ roomId });
-  if (!debateResult) return null;
+// Update the determineWinner function in your server code
+async function determineWinner(roomId, forceEnd = false) {
+  try {
+    console.log(`🔍 Determining winner for room ${roomId}, forceEnd: ${forceEnd}`);
 
-  const { teamScores, totalRounds } = debateResult;
+    const debateResult = await DebateResult.findOne({ roomId });
+    if (!debateResult) {
+      console.log('❌ No debate result found');
+      return null;
+    }
 
-  // Criteria 1: Minimum arguments per team to declare winner
-  const MIN_ARGUMENTS_PER_TEAM = 3;
-  const teamsWithEnoughArgs = ['favor', 'against', 'neutral'].filter(team =>
-    teamScores[team].argumentCount >= MIN_ARGUMENTS_PER_TEAM
-  );
+    // Get all arguments for this room
+    const arguments = await ArgumentEvaluation.find({ roomId });
+    console.log(`📊 Total arguments found: ${arguments.length}`);
 
-  if (teamsWithEnoughArgs.length < 2) {
-    return { winner: 'undecided', reason: 'Insufficient arguments' };
-  }
-
-  // Calculate weighted scores (average score × number of arguments)
-  const teamStats = {};
-  ['favor', 'against', 'neutral'].forEach(team => {
-    if (teamScores[team].argumentCount > 0) {
-      teamStats[team] = {
-        averageScore: teamScores[team].averageScore,
-        argumentCount: teamScores[team].argumentCount,
-        weightedScore: teamScores[team].averageScore *
-                      Math.log(teamScores[team].argumentCount + 1) // Logarithm to prevent spam
+    if (arguments.length === 0) {
+      console.log('❌ No arguments found');
+      return {
+        winner: 'undecided',
+        margin: 0,
+        stats: await getCurrentStandings(roomId),
+        awards: null,
+        reason: 'No arguments submitted'
       };
     }
-  });
 
-  // Find highest weighted score
-  const teams = Object.keys(teamStats);
-  if (teams.length === 0) return { winner: 'undecided' };
-
-  teams.sort((a, b) => teamStats[b].weightedScore - teamStats[a].weightedScore);
-
-  const winner = teams[0];
-  const runnerUp = teams[1];
-
-  // Check for tie (within 5% margin)
-  const margin = teamStats[winner].weightedScore - teamStats[runnerUp]?.weightedScore;
-  const marginPercentage = teamStats[runnerUp] ?
-    (margin / teamStats[runnerUp].weightedScore) * 100 : 100;
-
-  if (marginPercentage < 5 && marginPercentage > 0) {
-    return {
-      winner: 'tie',
-      teams: [winner, runnerUp],
-      margin: marginPercentage.toFixed(2)
+    // Calculate team effectiveness scores
+    const teamEffectiveness = {};
+    const teamStats = {
+      favor: { total: 0, count: 0, scores: [] },
+      against: { total: 0, count: 0, scores: [] },
+      neutral: { total: 0, count: 0, scores: [] }
     };
+
+    // Process all arguments
+    arguments.forEach(arg => {
+      const team = arg.team?.toLowerCase();
+      if (team && teamStats[team]) {
+        teamStats[team].total += arg.totalScore || 0;
+        teamStats[team].count += 1;
+        teamStats[team].scores.push(arg.totalScore || 0);
+      }
+    });
+
+    // Calculate averages
+    Object.keys(teamStats).forEach(team => {
+      if (teamStats[team].count > 0) {
+        const avgScore = teamStats[team].total / teamStats[team].count;
+        const variance = teamStats[team].scores.reduce((sum, score) =>
+          sum + Math.pow(score - avgScore, 2), 0) / teamStats[team].count;
+
+        teamEffectiveness[team] = {
+          averageScore: avgScore,
+          consistency: Math.sqrt(variance),
+          argumentCount: teamStats[team].count,
+          effectiveness: avgScore * Math.log(teamStats[team].count + 1)
+        };
+      }
+    });
+
+    // Find winner based on effectiveness
+    const teamsWithArgs = Object.keys(teamEffectiveness);
+    if (teamsWithArgs.length === 0) {
+      return {
+        winner: 'undecided',
+        margin: 0,
+        stats: await getCurrentStandings(roomId),
+        awards: null,
+        reason: 'No team has arguments'
+      };
+    }
+
+    // Sort teams by effectiveness
+    teamsWithArgs.sort((a, b) =>
+      teamEffectiveness[b].effectiveness - teamEffectiveness[a].effectiveness);
+
+    const winner = teamsWithArgs[0];
+    const runnerUp = teamsWithArgs[1];
+
+    let margin = 0;
+    if (runnerUp && teamEffectiveness[runnerUp].effectiveness > 0) {
+      margin = ((teamEffectiveness[winner].effectiveness -
+                teamEffectiveness[runnerUp].effectiveness) /
+                teamEffectiveness[runnerUp].effectiveness) * 100;
+    }
+
+    // Check win margin threshold
+    const winMarginThreshold = debateResult.settings?.winMarginThreshold || 10;
+    const finalWinner = margin >= winMarginThreshold ? winner : 'undecided';
+
+    console.log(`🏆 Winner determined: ${finalWinner}, Margin: ${margin.toFixed(2)}%`);
+
+    // Update debate result
+    debateResult.winningTeam = finalWinner;
+    debateResult.marginOfVictory = margin;
+    debateResult.endTime = new Date();
+    debateResult.isActive = false;
+    debateResult.calculatedAt = new Date();
+
+    // Calculate awards
+    if (arguments.length > 0) {
+      debateResult.awards = {
+        bestArgument: arguments.reduce((best, current) =>
+          current.totalScore > best.totalScore ? current : best
+        ),
+        mostActive: arguments.reduce((most, current) =>
+          (arguments.filter(arg => arg.userId === current.userId).length >
+           arguments.filter(arg => arg.userId === most.userId).length) ? current : most
+        )
+      };
+    }
+
+    await debateResult.save();
+
+    return {
+      winner: finalWinner,
+      margin: margin,
+      stats: await getCurrentStandings(roomId),
+      awards: debateResult.awards,
+      endedAt: debateResult.endTime,
+      reason: margin >= winMarginThreshold ?
+        `Won by ${margin.toFixed(2)}% margin` :
+        `Margin (${margin.toFixed(2)}%) below threshold (${winMarginThreshold}%)`
+    };
+
+  } catch (error) {
+    console.error("❌ Error determining winner:", error);
+    throw error;
   }
-
-  debateResult.winningTeam = winner;
-  debateResult.marginOfVictory = marginPercentage;
-  debateResult.calculatedAt = new Date();
-  debateResult.isActive = false;
-  await debateResult.save();
-
-  return {
-    winner,
-    margin: marginPercentage.toFixed(2),
-    stats: teamStats
-  };
 }
 
 async function getScoreboardData(roomId) {
