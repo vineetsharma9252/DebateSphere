@@ -2310,114 +2310,125 @@ app.get('/api/rooms/:roomId/status', async (req, res) => {
 });
 
 app.post("/evaluate", async (req, res) => {
-    const { argument, team, roomId, userId, username, messageId } = req.body;
+  const { argument, team, roomId, userId, username, messageId } = req.body;
 
-    const validTeams = ['favor', 'against', 'neutral'];
-      const normalizedTeam = team?.toLowerCase();
+  const validTeams = ['favor', 'against', 'neutral'];
+  const normalizedTeam = team?.toLowerCase();
 
-      if (!validTeams.includes(normalizedTeam)) {
-        console.error('❌ Invalid team:', team);
-        return res.status(400).json({
-          success: false,
-          error: `Invalid team. Must be one of: ${validTeams.join(', ')}`
-        });
-      }
+  if (!validTeams.includes(normalizedTeam)) {
+    console.error('❌ Invalid team:', team);
+    return res.status(400).json({
+      success: false,
+      error: `Invalid team. Must be one of: ${validTeams.join(', ')}`
+    });
+  }
 
-    await ensureDebateResultExists(roomId, userId);
+  await ensureDebateResultExists(roomId, userId);
 
+  // Validate input
+  if (!argument || argument.trim().length < 10) {
+    return res.json({
+      success: true,
+      evaluation: {
+        clarity: 3, relevance: 3, logic: 3, evidence: 3,
+        persuasiveness: 3, rebuttal: 3, totalScore: 18,
+        feedback: "Argument is too short for meaningful evaluation."
+      },
+      currentStandings: await getCurrentStandings(roomId)
+    });
+  }
+
+  console.log("📝 Evaluation request received:", {
+    argumentLength: argument?.length,
+    team,
+    roomId,
+    userId,
+    username,
+    messageId
+  });
+
+  let actualMessageId = messageId;
+  if (!actualMessageId) {
     try {
-        const argumentsCount = await ArgumentEvaluation.countDocuments({ roomId });
-
-        if (argumentsCount === 0) {
-          console.log('⏰ First argument submitted - checking if timer should start');
-
-          const debateResult = await DebateResult.findOne({ roomId });
-          const room = await Room.findOne({ roomId });
-
-          if (!debateResult || !debateResult.startTime) {
-            console.log('⏰ Starting debate timer for first argument');
-
-            // Start the timer
-            if (!debateResult) {
-              const newDebateResult = new DebateResult({
-                roomId,
-                debateTitle: room?.title || `Debate ${roomId}`,
-                startTime: new Date(),
-                isActive: true,
-                settings: {
-                  maxDuration: 1800, // 30 minutes
-                  maxArguments: 50,
-                  minArgumentsPerTeam: 3,
-                  winMarginThreshold: 10,
-                  minEndTime: 300 // 5 minutes
-                }
-              });
-              await newDebateResult.save();
-            } else {
-              debateResult.startTime = new Date();
-              debateResult.isActive = true;
-              await debateResult.save();
-            }
-
-            // Emit timer started event
-            io.to(roomId).emit('debate_timer_started', {
-              roomId,
-              startTime: new Date(),
-              duration: 1800,
-              autoStarted: true
-            });
-
-            console.log('✅ Timer started for first argument');
-          }
-        }
-      } catch (timerError) {
-        console.error('Error checking/starting timer:', timerError);
-      }
-
-    // Validate input
-    if (!argument || argument.trim().length < 10) {
-        return res.json({
-            success: true,
-            evaluation: {
-                clarity: 3, relevance: 3, logic: 3, evidence: 3,
-                persuasiveness: 3, rebuttal: 3, totalScore: 18,
-                feedback: "Argument is too short for meaningful evaluation."
-            },
-            currentStandings: await getCurrentStandings(roomId)
-        });
-    }
-    console.log("📝 Evaluation request received:", {
-        argumentLength: argument?.length,
-        team,
+      const recentMessage = await Message.findOne({
         roomId,
         userId,
-        username,
-        messageId
-      });
-      let actualMessageId = messageId;
-        if (!actualMessageId) {
-          try {
-            const recentMessage = await Message.findOne({
-              roomId,
-              userId,
-              isDeleted: false
-            }).sort({ time: -1 }).limit(1);
+        isDeleted: false
+      }).sort({ time: -1 }).limit(1);
 
-        if (recentMessage) {
-              actualMessageId = recentMessage.messageId || recentMessage._id.toString();
-              console.log(`🔍 Found recent message for linking: ${actualMessageId}`);
-            }
-        } catch (error) {
-            console.error("Error finding recent message:", error);
-        }
+      if (recentMessage) {
+        actualMessageId = recentMessage.messageId || recentMessage._id.toString();
+        console.log(`🔍 Found recent message for linking: ${actualMessageId}`);
+      }
+    } catch (error) {
+      console.error("Error finding recent message:", error);
+    }
+  }
+
+  console.log(`📌 Using messageId for evaluation: ${actualMessageId || 'Not found'}`);
+
+  // ============ FIXED: Check and start timer before evaluation ============
+  try {
+    // Get room to check if timer should be started
+    const room = await Room.findOne({ roomId });
+
+    // Get existing debate result
+    let debateResult = await DebateResult.findOne({ roomId });
+
+    // Count existing arguments
+    const existingArguments = await ArgumentEvaluation.find({ roomId });
+    console.log(`📊 Existing arguments count: ${existingArguments.length}`);
+
+    // Start timer if this is the first argument and timer hasn't started
+    if (existingArguments.length === 0 && (!debateResult || !debateResult.startTime || !debateResult.isActive)) {
+      console.log('⏰ FIRST ARGUMENT DETECTED - Starting debate timer...');
+
+      const startTime = new Date();
+      const duration = 1800; // 30 minutes
+
+      if (!debateResult) {
+        debateResult = new DebateResult({
+          roomId,
+          debateTitle: room?.title || `Debate ${roomId}`,
+          startTime,
+          isActive: true,
+          settings: {
+            maxDuration: duration,
+            maxArguments: 50,
+            minArgumentsPerTeam: 3,
+            winMarginThreshold: 10,
+            minEndTime: 300 // 5 minutes
+          }
+        });
+      } else {
+        debateResult.startTime = startTime;
+        debateResult.isActive = true;
       }
 
+      await debateResult.save();
+      console.log(`✅ Debate timer started at: ${startTime}`);
 
+      // Broadcast timer start to all users in the room
+      io.to(roomId).emit('debate_timer_started', {
+        roomId,
+        startTime: debateResult.startTime,
+        duration: duration,
+        startedBy: userId,
+        autoStarted: true
+      });
 
-        console.log(`📌 Using messageId for evaluation: ${actualMessageId || 'Not found'}`);
+      console.log(`📢 Timer started event emitted to room ${roomId}`);
+    } else if (debateResult && debateResult.startTime) {
+      console.log(`⏰ Timer already started at: ${debateResult.startTime}`);
+    }
+  } catch (timerError) {
+    console.error('❌ Error starting timer:', timerError);
+    // Don't fail the evaluation if timer fails
+  }
+  // ============ END FIX ============
 
-    // Short, effective prompt
-    const scoringPrompt = `You are a debate judge. Score this argument from 1-10 on:
+  // Short, effective prompt
+  const scoringPrompt = `You are a debate judge. Score this argument from 1-10 on:
 1. Clarity: Is it easy to understand?
 2. Relevance: Does it relate to the stance: ${team}?
 3. Logic: Is the reasoning sound?
@@ -2439,286 +2450,240 @@ Return ONLY valid JSON with this structure:
     "feedback": "<constructive feedback string>"
 }`;
 
+  try {
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: scoringPrompt }],
+        temperature: 0.2,
+        max_tokens: 200,
+        response_format: { type: "json_object" }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 20000
+      }
+    );
+
+    const resultText = response.data.choices[0].message.content;
+    console.log("AI Response:", resultText);
+
+    let evaluation;
     try {
-        const response = await axios.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-                model: "llama-3.3-70b-versatile", // ✅ CURRENT MODEL
-                messages: [{ role: "user", content: scoringPrompt }],
-                temperature: 0.2,
-                max_tokens: 200,
-                response_format: { type: "json_object" }
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                timeout: 20000
-            }
-        );
+      evaluation = JSON.parse(resultText);
+      console.log("✅ Parsed AI evaluation:", evaluation);
 
-        const resultText = response.data.choices[0].message.content;
-        console.log("AI Response:", resultText);
+      // Validate the response has all required fields
+      const requiredFields = ['clarity', 'relevance', 'logic', 'evidence',
+                             'persuasiveness', 'rebuttal', 'totalScore', 'feedback'];
+      const hasAllFields = requiredFields.every(field => field in evaluation);
 
-        let evaluation;
-        try {
-            evaluation = JSON.parse(resultText);
-            console.log("✅ Parsed AI evaluation:", evaluation);
-               // Validate the response has all required fields
-            const requiredFields = ['clarity', 'relevance', 'logic', 'evidence',
-                                   'persuasiveness', 'rebuttal', 'totalScore', 'feedback'];
-            const hasAllFields = requiredFields.every(field => field in evaluation);
+      if (!hasAllFields) {
+        throw new Error("AI response missing required fields");
+      }
 
-            if (!hasAllFields) {
-                throw new Error("AI response missing required fields");
-            }
+      const updatedScoreboard = await getScoreboardData(roomId);
 
-            const updatedScoreboard = await getScoreboardData(roomId);
+      // Broadcast updated scoreboard to all clients in the room
+      io.to(roomId).emit('scoreboard_updated', {
+        roomId,
+        standings: await getCurrentStandings(roomId),
+        leaderboard: updatedScoreboard.leaderboard,
+        winner: updatedScoreboard.winner
+      });
 
-                // Broadcast updated scoreboard to all clients in the room
-                io.to(roomId).emit('scoreboard_updated', {
-                  roomId,
-                  standings: await getCurrentStandings(roomId),
-                  leaderboard: updatedScoreboard.leaderboard,
-                  winner: updatedScoreboard.winner
-                });
-
-        } catch (parseError) {
-            console.error("Failed to parse AI response:", parseError);
-            // Create a structured fallback from the raw text
-            evaluation = createFallbackFromText(resultText, argument);
-        }
-//        team = team.toLowerCase();
-        // Save to database
-        console.log("team is " + team);
-        const argumentEval = new ArgumentEvaluation({
-            roomId,
-            userId,
-            username,
-            team,
-            argument: argument.substring(0, 800),
-            scores: {
-                clarity: evaluation.clarity || 5,
-                relevance: evaluation.relevance || 5,
-                logic: evaluation.logic || 5,
-                evidence: evaluation.evidence || 5,
-                persuasiveness: evaluation.persuasiveness || 5,
-                rebuttal: evaluation.rebuttal || 5
-            },
-            totalScore: evaluation.totalScore || 30,
-            feedback: evaluation.feedback || "AI evaluation completed",
-            messageId : actualMessageId,
-            evaluatedAt: new Date(),
-            aiConfidence: 0.9
-        });
-
-        await argumentEval.save();
-
-        if (actualMessageId) {
-            try {
-              // Try to find message by messageId first, then by _id
-              let messageToUpdate = await Message.findOne({
-                $or: [
-                  { messageId: actualMessageId },
-                  { _id: actualMessageId }
-                ]
-              });
-
-              if (messageToUpdate) {
-                console.log(`🔗 Linking evaluation to message: ${messageToUpdate._id}`);
-                await Message.findByIdAndUpdate(messageToUpdate._id, {
-                  evaluationId: argumentEval._id,
-                  evaluationScore: evaluation.totalScore
-                });
-              } else {
-                console.log(`⚠️ Message not found for ID: ${actualMessageId}`);
-              }
-            } catch (error) {
-              console.error("Error updating message with evaluation:", error);
-            }
-          }
-
-        const existingArguments = await ArgumentEvaluation.find({ roomId });
-            const debateResult = await DebateResult.findOne({ roomId });
-
-            if (existingArguments.length === 0 && (!debateResult || !debateResult.startTime)) {
-              console.log('⏰ First argument submitted - starting debate timer');
-
-              // Auto-start timer for 30 minutes
-              if (!debateResult) {
-                debateResult = new DebateResult({
-                  roomId,
-                  debateTitle: room?.title || `Debate ${roomId}`,
-                  startTime: new Date(),
-                  isActive: true,
-                  settings: {
-                    maxDuration: 1800, // 30 minutes
-                    maxArguments: 50,
-                    minArgumentsPerTeam: 3,
-                    winMarginThreshold: 10,
-                    minEndTime: 300 // 5 minutes
-                  }
-                });
-              } else {
-                debateResult.startTime = new Date();
-                debateResult.isActive = true;
-                if (!debateResult.settings) {
-                  debateResult.settings = {
-                    maxDuration: 1800,
-                    minEndTime: 300
-                  };
-                }
-              }
-
-              await debateResult.save();
-
-              // Broadcast timer start to all users
-              io.to(roomId).emit('debate_timer_started', {
-                roomId,
-                startTime: debateResult.startTime,
-                duration: debateResult.settings.maxDuration,
-                startedBy: userId,
-                autoStarted: true
-              });
-
-              console.log('✅ Auto-started debate timer');
-            }
-        // Update team scores
-        await updateTeamScore(roomId, team, evaluation.totalScore, userId);
-        const updatedScoreboard = await getScoreboardData(roomId);
-        const existingStance = await UserStance.findOne({ roomId, userId });
-        if (!existingStance) {
-            await UserStance.findOneAndUpdate(
-                { roomId, userId },
-                {
-                    roomId,
-                    userId,
-                    username,
-                    stance: team.toLowerCase(),
-                    stanceLabel: team.toLowerCase() === 'favor' ? 'In Favor' :
-                    team.toLowerCase() === 'against' ? 'Against' : 'Neutral',
-                    userImage: '',
-                    selectedAt: new Date()
-                },
-                { upsert: true, new: true }
-            );
-        }
-        const scoreboardData = await getScoreboardData(roomId);
-
-        // Broadcast to room
-        if (io) {
-            io.to(roomId).emit('argument_evaluated', {
-                roomId,
-                userId,
-                username,
-                team,
-                totalScore: evaluation.totalScore,
-                evaluationId: argumentEval._id,
-                messageId
-            });
-
-            io.to(roomId).emit('scoreboard_updated', {
-              roomId,
-              standings: await getCurrentStandings(roomId),
-              leaderboard: updatedScoreboard.leaderboard,
-              winner: updatedScoreboard.winner,
-              updatedAt: new Date().toISOString()
-            });
-
-            // Also emit the simple score update
-            io.to(roomId).emit('score_updated', {
-              roomId,
-              teamScores: await getCurrentStandings(roomId),
-              lastUpdate: new Date().toISOString()
-            });
-        }
-
-        // Update message with evaluation
-        if (messageId) {
-            await Message.findByIdAndUpdate(messageId, {
-                evaluationId: argumentEval._id,
-                evaluationScore: evaluation.totalScore
-            });
-        }
-        const currentStandings = await getCurrentStandings(roomId);
-
-                // Check if debate should end
-        if (debateResult) {
-            const shouldEndByArguments = debateResult.totalRounds >= debateResult.settings.maxArguments;
-            const debateDuration = (new Date() - debateResult.startTime) / 1000;
-            const shouldEndByTime = debateDuration >= debateResult.settings.maxDuration;
-
-            if (shouldEndByArguments || shouldEndByTime) {
-                const winnerData = await determineWinner(roomId, true);
-                if (winnerData && winnerData.winner !== 'undecided') {
-                    io.to(roomId).emit('debate_ended', {
-                        roomId,
-                        ...winnerData
-                    });
-                }
-            }
-        }
-        res.json({
-            success: true,
-            evaluation: evaluation,
-            evaluationId: argumentEval._id,
-            currentStandings: currentStandings
-        });
-
-    } catch (error) {
-        console.error("❌ Groq API Error:", {
-            message: error.message,
-            stack : error.stack ,
-            status: error.response?.status,
-            data: error.response?.data
-        });
-
-        // Create intelligent fallback evaluation
-        const fallbackEvaluation = createIntelligentFallback(argument, team);
-
-        // Still save the fallback
-        const argumentEval = new ArgumentEvaluation({
-            roomId,
-            userId,
-            username,
-            team,
-            argument: argument.substring(0, 800),
-            scores: {
-                clarity: fallbackEvaluation.clarity,
-                relevance: fallbackEvaluation.relevance,
-                logic: fallbackEvaluation.logic,
-                evidence: fallbackEvaluation.evidence,
-                persuasiveness: fallbackEvaluation.persuasiveness,
-                rebuttal: fallbackEvaluation.rebuttal
-            },
-            totalScore: fallbackEvaluation.totalScore,
-            feedback: fallbackEvaluation.feedback,
-            messageId,
-            evaluatedAt: new Date(),
-            aiConfidence: 0.1,
-            isFallback: true,
-            error: error.message
-        });
-
-        await argumentEval.save();
-
-        // Update team scores
-        await updateTeamScore(roomId, team, fallbackEvaluation.totalScore, userId);
-
-        res.json({
-            success: true,
-            evaluation: fallbackEvaluation,
-            warning: `AI service issue. Using fallback scoring. Error: ${error.message}`,
-            currentStandings: await getCurrentStandings(roomId),
-            isFallback: true
-        });
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      evaluation = createFallbackFromText(resultText, argument);
     }
 
+    // Save to database
+    console.log("team is " + team);
+    const argumentEval = new ArgumentEvaluation({
+      roomId,
+      userId,
+      username,
+      team,
+      argument: argument.substring(0, 800),
+      scores: {
+        clarity: evaluation.clarity || 5,
+        relevance: evaluation.relevance || 5,
+        logic: evaluation.logic || 5,
+        evidence: evaluation.evidence || 5,
+        persuasiveness: evaluation.persuasiveness || 5,
+        rebuttal: evaluation.rebuttal || 5
+      },
+      totalScore: evaluation.totalScore || 30,
+      feedback: evaluation.feedback || "AI evaluation completed",
+      messageId: actualMessageId,
+      evaluatedAt: new Date(),
+      aiConfidence: 0.9
+    });
 
+    await argumentEval.save();
+
+    if (actualMessageId) {
+      try {
+        // Try to find message by messageId first, then by _id
+        let messageToUpdate = await Message.findOne({
+          $or: [
+            { messageId: actualMessageId },
+            { _id: actualMessageId }
+          ]
+        });
+
+        if (messageToUpdate) {
+          console.log(`🔗 Linking evaluation to message: ${messageToUpdate._id}`);
+          await Message.findByIdAndUpdate(messageToUpdate._id, {
+            evaluationId: argumentEval._id,
+            evaluationScore: evaluation.totalScore
+          });
+        } else {
+          console.log(`⚠️ Message not found for ID: ${actualMessageId}`);
+        }
+      } catch (error) {
+        console.error("Error updating message with evaluation:", error);
+      }
+    }
+
+    // Update team scores
+    await updateTeamScore(roomId, team, evaluation.totalScore, userId);
+    const updatedScoreboard = await getScoreboardData(roomId);
+    const existingStance = await UserStance.findOne({ roomId, userId });
+    if (!existingStance) {
+      await UserStance.findOneAndUpdate(
+        { roomId, userId },
+        {
+          roomId,
+          userId,
+          username,
+          stance: team.toLowerCase(),
+          stanceLabel: team.toLowerCase() === 'favor' ? 'In Favor' :
+            team.toLowerCase() === 'against' ? 'Against' : 'Neutral',
+          userImage: '',
+          selectedAt: new Date()
+        },
+        { upsert: true, new: true }
+      );
+    }
+    const scoreboardData = await getScoreboardData(roomId);
+
+    // Broadcast to room
+    if (io) {
+      io.to(roomId).emit('argument_evaluated', {
+        roomId,
+        userId,
+        username,
+        team,
+        totalScore: evaluation.totalScore,
+        evaluationId: argumentEval._id,
+        messageId
+      });
+
+      io.to(roomId).emit('scoreboard_updated', {
+        roomId,
+        standings: await getCurrentStandings(roomId),
+        leaderboard: updatedScoreboard.leaderboard,
+        winner: updatedScoreboard.winner,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Also emit the simple score update
+      io.to(roomId).emit('score_updated', {
+        roomId,
+        teamScores: await getCurrentStandings(roomId),
+        lastUpdate: new Date().toISOString()
+      });
+    }
+
+    // Update message with evaluation
+    if (messageId) {
+      await Message.findByIdAndUpdate(messageId, {
+        evaluationId: argumentEval._id,
+        evaluationScore: evaluation.totalScore
+      });
+    }
+    const currentStandings = await getCurrentStandings(roomId);
+
+    // Check if debate should end
+    const debateResult = await DebateResult.findOne({ roomId });
+    if (debateResult) {
+      const shouldEndByArguments = debateResult.totalRounds >= debateResult.settings.maxArguments;
+      const debateDuration = (new Date() - debateResult.startTime) / 1000;
+      const shouldEndByTime = debateDuration >= debateResult.settings.maxDuration;
+
+      if (shouldEndByArguments || shouldEndByTime) {
+        const winnerData = await determineWinner(roomId, true);
+        if (winnerData && winnerData.winner !== 'undecided') {
+          io.to(roomId).emit('debate_ended', {
+            roomId,
+            ...winnerData
+          });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      evaluation: evaluation,
+      evaluationId: argumentEval._id,
+      currentStandings: currentStandings
+    });
+
+  } catch (error) {
+    console.error("❌ Groq API Error:", {
+      message: error.message,
+      stack: error.stack,
+      status: error.response?.status,
+      data: error.response?.data
+    });
+
+    // Create intelligent fallback evaluation
+    const fallbackEvaluation = createIntelligentFallback(argument, team);
+
+    // Still save the fallback
+    const argumentEval = new ArgumentEvaluation({
+      roomId,
+      userId,
+      username,
+      team,
+      argument: argument.substring(0, 800),
+      scores: {
+        clarity: fallbackEvaluation.clarity,
+        relevance: fallbackEvaluation.relevance,
+        logic: fallbackEvaluation.logic,
+        evidence: fallbackEvaluation.evidence,
+        persuasiveness: fallbackEvaluation.persuasiveness,
+        rebuttal: fallbackEvaluation.rebuttal
+      },
+      totalScore: fallbackEvaluation.totalScore,
+      feedback: fallbackEvaluation.feedback,
+      messageId,
+      evaluatedAt: new Date(),
+      aiConfidence: 0.1,
+      isFallback: true,
+      error: error.message
+    });
+
+    await argumentEval.save();
+
+    // Update team scores
+    await updateTeamScore(roomId, team, fallbackEvaluation.totalScore, userId);
+
+    res.json({
+      success: true,
+      evaluation: fallbackEvaluation,
+      warning: `AI service issue. Using fallback scoring. Error: ${error.message}`,
+      currentStandings: await getCurrentStandings(roomId),
+      isFallback: true
+    });
+  }
 });
 
-// Helper function to create fallback from malformed AI response
 // Helper function to create fallback from malformed AI response
 function createFallbackFromText(text, originalArgument) {
     // Try to extract numbers from the text
