@@ -2324,6 +2324,56 @@ app.post("/evaluate", async (req, res) => {
       }
 
     await ensureDebateResultExists(roomId, userId);
+
+    try {
+        const argumentsCount = await ArgumentEvaluation.countDocuments({ roomId });
+
+        if (argumentsCount === 0) {
+          console.log('⏰ First argument submitted - checking if timer should start');
+
+          const debateResult = await DebateResult.findOne({ roomId });
+          const room = await Room.findOne({ roomId });
+
+          if (!debateResult || !debateResult.startTime) {
+            console.log('⏰ Starting debate timer for first argument');
+
+            // Start the timer
+            if (!debateResult) {
+              const newDebateResult = new DebateResult({
+                roomId,
+                debateTitle: room?.title || `Debate ${roomId}`,
+                startTime: new Date(),
+                isActive: true,
+                settings: {
+                  maxDuration: 1800, // 30 minutes
+                  maxArguments: 50,
+                  minArgumentsPerTeam: 3,
+                  winMarginThreshold: 10,
+                  minEndTime: 300 // 5 minutes
+                }
+              });
+              await newDebateResult.save();
+            } else {
+              debateResult.startTime = new Date();
+              debateResult.isActive = true;
+              await debateResult.save();
+            }
+
+            // Emit timer started event
+            io.to(roomId).emit('debate_timer_started', {
+              roomId,
+              startTime: new Date(),
+              duration: 1800,
+              autoStarted: true
+            });
+
+            console.log('✅ Timer started for first argument');
+          }
+        }
+      } catch (timerError) {
+        console.error('Error checking/starting timer:', timerError);
+      }
+
     // Validate input
     if (!argument || argument.trim().length < 10) {
         return res.json({

@@ -661,6 +661,35 @@ export default function ChatRoom({ route }) {
     return stanceData ? stanceData.light : '#f8fafc';
   };
 
+    const handleTimeUp = useCallback(async () => {
+        console.log('⏰ Debate time is up! Auto-ending...');
+
+        // Clear the timer interval
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          setTimerInterval(null);
+        }
+
+        Alert.alert(
+          'Time\'s Up!',
+          'The debate duration has ended. Calculating results...',
+          [{ text: 'OK' }]
+        );
+
+        // Auto-end the debate
+        try {
+          const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
+            userId: userId,
+            reason: 'Time expired'
+          });
+
+          if (response.data.success) {
+            console.log('✅ Debate auto-ended successfully');
+          }
+        } catch (error) {
+          console.error('Error auto-ending debate:', error);
+        }
+      }, [roomId, userId, timerInterval]);
 
   // Start the debate timer
   const startDebateTimer = useCallback((totalDuration = 1800) => {
@@ -734,35 +763,7 @@ export default function ChatRoom({ route }) {
         }
       };
     }, [timerInterval]);
-  const handleTimeUp = useCallback(async () => {
-    console.log('⏰ Debate time is up! Auto-ending...');
-
-    // Clear the timer interval
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
-
-    Alert.alert(
-      'Time\'s Up!',
-      'The debate duration has ended. Calculating results...',
-      [{ text: 'OK' }]
-    );
-
-    // Auto-end the debate
-    try {
-      const response = await axios.post(`${SERVER_URL}/api/debate/${roomId}/end`, {
-        userId: userId,
-        reason: 'Time expired'
-      });
-
-      if (response.data.success) {
-        console.log('✅ Debate auto-ended successfully');
-      }
-    } catch (error) {
-      console.error('Error auto-ending debate:', error);
-    }
-  }, [roomId, userId, timerInterval]); // Add timerInterval to dependencies
+  // Add timerInterval to dependencies
 
   // Format time display
   const formatTime = (seconds) => {
@@ -940,6 +941,354 @@ const handleDebateEnded = useCallback((data) => {
     }
   }, [roomId, navigation, title, desc, debateScores, leaderboard, fetchScoreboard]);
 
+
+// Add this useEffect to monitor connection
+useEffect(() => {
+  if (socketRef.current) {
+    const handleDisconnect = (reason) => {
+      console.log('Socket disconnected:', reason);
+      setIsConnected(false);
+
+      // Attempt to reconnect
+      if (reason === 'io server disconnect' || reason === 'transport close') {
+        setTimeout(() => {
+          if (socketRef.current) {
+            socketRef.current.connect();
+          }
+        }, 1000);
+      }
+    };
+
+    socketRef.current.on('disconnect', handleDisconnect);
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.off('disconnect', handleDisconnect);
+      }
+    };
+  }
+}, []);
+
+
+useEffect(() => {
+  let isMounted = true;
+
+  const initializeSocket = () => {
+    if (socketRef.current?.connected) {
+      console.log('✅ Socket already connected');
+      return;
+    }
+
+    setIsConnecting(true);
+
+    // Disconnect existing socket if any
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    // Create new socket connection
+    socketRef.current = io(SERVER_URL, {
+      transports: ['websocket'],
+      timeout: 30000,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 10,
+      autoConnect: true,
+      forceNew: true,
+    });
+
+    // Basic event handlers
+    socketRef.current.on('connect', () => {
+      console.log('✅ Socket connected:', socketRef.current?.id);
+      if (isMounted) {
+        setIsConnected(true);
+        setIsConnecting(false);
+
+        // Join room after connection
+        socketRef.current?.emit('join_room', roomId);
+
+        // Initialize other things
+        checkUserStance();
+        fetchScoreboard();
+        fetchDebateTimer();
+      }
+    });
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('❌ Connection error:', error);
+      if (isMounted) {
+        setIsConnecting(false);
+        setIsConnected(false);
+      }
+    });
+
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('🔌 Socket disconnected:', reason);
+      if (isMounted) {
+        setIsConnected(false);
+      }
+
+      // Auto-reconnect for certain disconnect reasons
+      if (reason === 'io server disconnect') {
+        setTimeout(() => {
+          if (socketRef.current) {
+            socketRef.current.connect();
+          }
+        }, 1000);
+      }
+    });
+
+    // Message handler
+    socketRef.current.on('receive_message', async (msg) => {
+      if (!isMounted) return;
+
+      console.log('📩 Received message:', msg);
+
+      try {
+        if (Array.isArray(msg)) {
+          const processedMessages = await Promise.all(
+            msg.map(async (message) => {
+              const messageUserId = message.userId || message.senderId;
+              let userImageToUse = message.image || message.userImage || '';
+
+              if (!userImageToUse && messageUserId) {
+                userImageToUse = await getUserImage(messageUserId, message.sender);
+              }
+
+              return {
+                ...message,
+                id: message.id || generateMessageId(),
+                isDeleted: message.isDeleted || false,
+                userId: messageUserId,
+                userImage: userImageToUse,
+                image: message.image || userImageToUse
+              };
+            })
+          );
+
+          setMessages(processedMessages);
+        } else {
+          const messageUserId = msg.userId || msg.senderId;
+          let userImageToUse = msg.image || msg.userImage || '';
+
+          if (!userImageToUse && messageUserId) {
+            userImageToUse = await getUserImage(messageUserId, msg.sender);
+          }
+
+          const processedMessage = {
+            ...msg,
+            id: msg.id || generateMessageId(),
+            isDeleted: msg.isDeleted || false,
+            userId: messageUserId,
+            userImage: userImageToUse,
+            image: msg.image || userImageToUse
+          };
+
+          setMessages(prev => [processedMessage, ...prev]);
+        }
+      } catch (error) {
+        console.error('Error processing message:', error);
+      }
+    });
+
+    // Debate-specific event listeners
+    const handleTimerStarted = (data) => {
+      if (data.roomId === roomId) {
+        fetchDebateTimer();
+      }
+    };
+
+    const handleTimerUpdate = (data) => {
+      if (data.roomId === roomId) {
+        setDebateTimer(prev => ({
+          ...prev,
+          elapsedSeconds: data.elapsedSeconds || 0,
+          remainingSeconds: data.remainingSeconds || 0,
+          isActive: data.isActive || false,
+          totalDuration: data.totalDuration || prev.totalDuration,
+        }));
+      }
+    };
+
+    const handleScoreUpdated = (data) => {
+      if (data.roomId === roomId && data.teamScores) {
+        setDebateScores(data.teamScores);
+      }
+    };
+
+    const handleDebateEnded = (data) => {
+      if (data.roomId === roomId) {
+        console.log('🏆 Debate ended via socket:', data);
+        setDebateEnded(true);
+        setCanSendMessages(false);
+        setWinner(data.winner || 'undecided');
+
+        if (data.stats) {
+          setDebateScores(data.stats);
+        }
+
+        fetchScoreboard();
+      }
+    };
+
+    const handleArgumentEvaluated = (data) => {
+      if (data.roomId === roomId && data.userId !== userId) {
+        console.log('📝 Argument evaluated for other user:', data);
+
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(
+            `${data.username}'s argument scored ${data.totalScore} points`,
+            ToastAndroid.SHORT
+          );
+        }
+      }
+    };
+
+    const handleScoreboardUpdated = (data) => {
+      if (data.roomId === roomId) {
+        if (data.leaderboard) {
+          setLeaderboard(data.leaderboard);
+        }
+        if (data.standings) {
+          setDebateScores(data.standings);
+        }
+        if (data.winner) {
+          setWinner(data.winner);
+        }
+      }
+    };
+
+    const handleRoomClosed = (data) => {
+      if (data.roomId === roomId) {
+        Alert.alert(
+          'Room Closed',
+          data.message || 'This room has been closed',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      }
+    };
+
+    const handleUserStanceSelected = (data) => {
+      setRoomStances(prev => ({
+        ...prev,
+        [data.userId]: data
+      }));
+    };
+
+    const handleRoomStances = (stances) => {
+      setRoomStances(stances);
+    };
+
+    // Attach all listeners
+    socketRef.current.on('debate_timer_started', handleTimerStarted);
+    socketRef.current.on('debate_timer_update', handleTimerUpdate);
+    socketRef.current.on('score_updated', handleScoreUpdated);
+    socketRef.current.on('debate_ended', handleDebateEnded);
+    socketRef.current.on('argument_evaluated', handleArgumentEvaluated);
+    socketRef.current.on('scoreboard_updated', handleScoreboardUpdated);
+    socketRef.current.on('room_closed', handleRoomClosed);
+    socketRef.current.on('user_stance_selected', handleUserStanceSelected);
+    socketRef.current.on('room_stances', handleRoomStances);
+
+    // Previous messages handler
+    socketRef.current.on('previous_messages', async (msgs) => {
+      if (Array.isArray(msgs)) {
+        const messagesWithIds = await Promise.all(
+          msgs.reverse().map(async (msg) => {
+            const messageUserId = msg.userId || msg.senderId;
+            let userImageToUse = msg.image || msg.userImage || '';
+
+            if (!userImageToUse && messageUserId) {
+              userImageToUse = await getUserImage(messageUserId, msg.sender);
+            }
+
+            return {
+              ...msg,
+              id: msg.id || generateMessageId(),
+              isDeleted: msg.isDeleted || false,
+              userId: messageUserId,
+              userImage: userImageToUse,
+              image: msg.image || userImageToUse
+            };
+          })
+        );
+
+        setMessages(messagesWithIds);
+      }
+    });
+
+    // Message deletion events
+    socketRef.current.on('message_deleted', (deletedMessage) => {
+      console.log('Message deleted:', deletedMessage);
+      if (deletedMessage && deletedMessage.id) {
+        setMessages(prev => prev.map(msg =>
+          msg.id === deletedMessage.id
+            ? {
+                ...msg,
+                text: 'This message was deleted',
+                image: null,
+                isDeleted: true
+              }
+            : msg
+        ));
+      }
+    });
+
+    // User join/leave events
+    socketRef.current.on('user_joined', async (userData) => {
+      console.log('User joined:', userData);
+      if (userData.userId && userData.userImage) {
+        setUserImages(prev => ({
+          ...prev,
+          [userData.userId]: userData.userImage
+        }));
+      } else if (userData.userId) {
+        const fetchedImage = await fetchUserImageById(userData.userId);
+        if (fetchedImage) {
+          setUserImages(prev => ({
+            ...prev,
+            [userData.userId]: fetchedImage
+          }));
+        }
+      }
+    });
+  };
+
+  initializeSocket();
+
+  return () => {
+    isMounted = false;
+
+    // Clean up all listeners
+    if (socketRef.current) {
+      socketRef.current.off('connect');
+      socketRef.current.off('connect_error');
+      socketRef.current.off('disconnect');
+      socketRef.current.off('receive_message');
+      socketRef.current.off('previous_messages');
+      socketRef.current.off('message_deleted');
+      socketRef.current.off('user_joined');
+      socketRef.current.off('debate_timer_started');
+      socketRef.current.off('debate_timer_update');
+      socketRef.current.off('score_updated');
+      socketRef.current.off('debate_ended');
+      socketRef.current.off('argument_evaluated');
+      socketRef.current.off('scoreboard_updated');
+      socketRef.current.off('room_closed');
+      socketRef.current.off('user_stance_selected');
+      socketRef.current.off('room_stances');
+
+      // Don't disconnect immediately, let it handle reconnection
+      setTimeout(() => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      }, 100);
+    }
+  };
+}, [roomId, userId]); // Only re-run if roomId or userId changes
 
 useEffect(() => {
   if (!socketRef.current) return;
@@ -1372,6 +1721,268 @@ const endDebate = useCallback(async () => {
       [{ text: 'Continue' }]
     );
   };
+    useEffect(() => {
+      let isMounted = true;
+
+      const initializeSocket = () => {
+        if (socketRef.current?.connected) {
+          console.log('Socket already connected');
+          return;
+        }
+
+        setIsConnecting(true);
+
+        // Disconnect existing socket
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+          socketRef.current = null;
+        }
+
+        // Create new socket connection
+        socketRef.current = io(SERVER_URL, {
+          transports: ['websocket'],
+          timeout: 30000,
+          reconnection: true,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+          reconnectionAttempts: 10,
+          autoConnect: true,
+          forceNew: true, // Force new connection
+        });
+
+        // Basic event handlers
+        socketRef.current.on('connect', () => {
+          console.log('✅ Socket connected:', socketRef.current?.id);
+          if (isMounted) {
+            setIsConnected(true);
+            setIsConnecting(false);
+
+            // Join room after connection
+            socketRef.current?.emit('join_room', roomId);
+
+            // Initialize other things
+            checkUserStance();
+            fetchScoreboard();
+            fetchDebateTimer();
+          }
+        });
+
+        socketRef.current.on('connect_error', (error) => {
+          console.error('❌ Connection error:', error);
+          if (isMounted) {
+            setIsConnecting(false);
+            setIsConnected(false);
+          }
+        });
+
+        socketRef.current.on('disconnect', (reason) => {
+          console.log('🔌 Socket disconnected:', reason);
+          if (isMounted) {
+            setIsConnected(false);
+          }
+
+          // Auto-reconnect for certain disconnect reasons
+          if (reason === 'io server disconnect') {
+            setTimeout(() => {
+              if (socketRef.current) {
+                socketRef.current.connect();
+              }
+            }, 1000);
+          }
+        });
+
+        // Message handler
+        socketRef.current.on('receive_message', async (msg) => {
+          if (!isMounted) return;
+
+          console.log('📩 Received message:', msg);
+
+          try {
+            if (Array.isArray(msg)) {
+              const processedMessages = await Promise.all(
+                msg.map(async (message) => {
+                  const messageUserId = message.userId || message.senderId;
+                  let userImageToUse = message.image || message.userImage || '';
+
+                  if (!userImageToUse && messageUserId) {
+                    userImageToUse = await getUserImage(messageUserId, message.sender);
+                  }
+
+                  return {
+                    ...message,
+                    id: message.id || generateMessageId(),
+                    isDeleted: message.isDeleted || false,
+                    userId: messageUserId,
+                    userImage: userImageToUse,
+                    image: message.image || userImageToUse
+                  };
+                })
+              );
+
+              setMessages(processedMessages);
+            } else {
+              const messageUserId = msg.userId || msg.senderId;
+              let userImageToUse = msg.image || msg.userImage || '';
+
+              if (!userImageToUse && messageUserId) {
+                userImageToUse = await getUserImage(messageUserId, msg.sender);
+              }
+
+              const processedMessage = {
+                ...msg,
+                id: msg.id || generateMessageId(),
+                isDeleted: msg.isDeleted || false,
+                userId: messageUserId,
+                userImage: userImageToUse,
+                image: msg.image || userImageToUse
+              };
+
+              setMessages(prev => [processedMessage, ...prev]);
+            }
+          } catch (error) {
+            console.error('Error processing message:', error);
+          }
+        });
+      };
+
+      initializeSocket();
+
+      return () => {
+        isMounted = false;
+
+        // Clean up only the basic listeners
+        if (socketRef.current) {
+          socketRef.current.off('connect');
+          socketRef.current.off('connect_error');
+          socketRef.current.off('disconnect');
+          socketRef.current.off('receive_message');
+
+          // Don't disconnect immediately, let it handle reconnection
+          setTimeout(() => {
+            if (socketRef.current) {
+              socketRef.current.disconnect();
+            }
+          }, 100);
+        }
+      };
+    }, [roomId, userId]); // Only re-run if roomId or userId changes
+
+// Add this separate useEffect for debate-specific events
+useEffect(() => {
+  if (!socketRef.current) return;
+
+  const socket = socketRef.current;
+
+  // Clean up any existing listeners first
+  socket.off('debate_timer_started');
+  socket.off('debate_timer_update');
+  socket.off('score_updated');
+  socket.off('debate_ended');
+  socket.off('argument_evaluated');
+  socket.off('scoreboard_updated');
+  socket.off('debate_settings_updated');
+  socket.off('room_closed');
+
+  // Set up listeners
+  const handleTimerStarted = (data) => {
+    if (data.roomId === roomId) {
+      console.log('⏰ Timer started via socket:', data);
+      fetchDebateTimer();
+    }
+  };
+
+  const handleTimerUpdate = (data) => {
+    if (data.roomId === roomId) {
+      setDebateTimer(prev => ({
+        ...prev,
+        elapsedSeconds: data.elapsedSeconds || 0,
+        remainingSeconds: data.remainingSeconds || 0,
+        isActive: data.isActive || false,
+        totalDuration: data.totalDuration || prev.totalDuration,
+      }));
+    }
+  };
+
+  const handleScoreUpdated = (data) => {
+    if (data.roomId === roomId && data.teamScores) {
+      setDebateScores(data.teamScores);
+    }
+  };
+
+  const handleDebateEnded = (data) => {
+    if (data.roomId === roomId) {
+      console.log('🏆 Debate ended via socket:', data);
+      setDebateEnded(true);
+      setCanSendMessages(false);
+      setWinner(data.winner || 'undecided');
+
+      if (data.stats) {
+        setDebateScores(data.stats);
+      }
+
+      fetchScoreboard();
+    }
+  };
+
+  const handleArgumentEvaluated = (data) => {
+    if (data.roomId === roomId && data.userId !== userId) {
+      console.log('📝 Argument evaluated for other user:', data);
+
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(
+          `${data.username}'s argument scored ${data.totalScore} points`,
+          ToastAndroid.SHORT
+        );
+      }
+    }
+  };
+
+  const handleScoreboardUpdated = (data) => {
+    if (data.roomId === roomId) {
+      if (data.leaderboard) {
+        setLeaderboard(data.leaderboard);
+      }
+      if (data.standings) {
+        setDebateScores(data.standings);
+      }
+      if (data.winner) {
+        setWinner(data.winner);
+      }
+    }
+  };
+
+  const handleRoomClosed = (data) => {
+    if (data.roomId === roomId) {
+      Alert.alert(
+        'Room Closed',
+        data.message || 'This room has been closed',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    }
+  };
+
+  // Attach listeners
+  socket.on('debate_timer_started', handleTimerStarted);
+  socket.on('debate_timer_update', handleTimerUpdate);
+  socket.on('score_updated', handleScoreUpdated);
+  socket.on('debate_ended', handleDebateEnded);
+  socket.on('argument_evaluated', handleArgumentEvaluated);
+  socket.on('scoreboard_updated', handleScoreboardUpdated);
+  socket.on('room_closed', handleRoomClosed);
+
+  // Cleanup
+  return () => {
+    if (socket) {
+      socket.off('debate_timer_started', handleTimerStarted);
+      socket.off('debate_timer_update', handleTimerUpdate);
+      socket.off('score_updated', handleScoreUpdated);
+      socket.off('debate_ended', handleDebateEnded);
+      socket.off('argument_evaluated', handleArgumentEvaluated);
+      socket.off('scoreboard_updated', handleScoreboardUpdated);
+      socket.off('room_closed', handleRoomClosed);
+    }
+  };
+}, [roomId, userId, navigation, fetchDebateTimer, fetchScoreboard]);
 
   useEffect(() => {
     setIsConnecting(true);
@@ -1626,6 +2237,11 @@ const endDebate = useCallback(async () => {
   };
 
   const proceedWithMessage = async (messageText, imageData, isAIDetected = false) => {
+    if (!canSendMessages) {
+      Alert.alert('Debate Ended', 'This debate has ended. You can no longer send messages.');
+      return;
+    }
+
     // CRITICAL: Check socket before proceeding
     if (!socketRef.current || !socketRef.current.connected) {
       Alert.alert('Connection Lost', 'Please reconnect to the server');
@@ -1654,63 +2270,63 @@ const endDebate = useCallback(async () => {
 
     console.log('Sending message with stance:', userStance);
 
-    // Wrap emit in try-catch and check socket
     try {
-      if (!socketRef.current) {
-        throw new Error('Socket not initialized');
-      }
-
-      socketRef.current.emit('send_message', messageData, async (ack) => {
-        console.log('Server ACK:', ack);
-
-        if (!socketRef.current?.connected) {
-          console.error('Socket lost during ACK processing');
+      // CRITICAL FIX: Use await with a promise instead of callback
+      const emitPromise = new Promise((resolve, reject) => {
+        if (!socketRef.current) {
+          reject(new Error('Socket not initialized'));
           return;
         }
 
-        if (ack && ack.status === "ok") {
-          // Check if timer needs to be started (first argument)
-          if (!debateTimer.isActive) {
-            try {
-              console.log('⏰ Attempting to start timer for first argument...');
-              const timerResponse = await axios.post(`${SERVER_URL}/api/debate/${roomId}/timer/start`, {
-                userId: userId,
-                duration: 1800 // 30 minutes
-              });
-
-              if (timerResponse.data.success) {
-                console.log('✅ Timer started successfully');
-              }
-            } catch (timerError) {
-              console.error('Error starting timer:', timerError);
-            }
+        socketRef.current.emit('send_message', messageData, (ack) => {
+          if (!ack) {
+            reject(new Error('No response from server'));
+            return;
           }
 
-          // Then evaluate the argument
-          const actualMessageId = ack.id;
-          try {
-            console.log("Evaluation Started ...");
-            const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
-              argument: cleanedText,
-              team: (userStance.id || userStance).toLowerCase(),
-              roomId: roomId,
-              userId: userId,
-              username: username,
-              messageId: actualMessageId
-            });
+          if (ack.status === "ok") {
+            resolve(ack);
+          } else {
+            reject(new Error(ack.error || 'Failed to send message'));
+          }
+        });
+      });
 
-            if (evalResponse.data.success) {
-              const { evaluation, currentStandings, winner } = evalResponse.data;
+      const ack = await emitPromise;
+      console.log('✅ Message sent successfully, ACK:', ack);
 
-              // Update local scores
-              if (currentStandings) {
-                setDebateScores(currentStandings);
-              }
+      // REMOVE the timer start code from here - let the server handle it
+      // The server will automatically start the timer on first argument
 
-              // REFRESH LEADERBOARD AFTER EVALUATION
-              fetchScoreboard();
+      // Then evaluate the argument
+      const actualMessageId = ack.id || ack.messageId;
+      if (actualMessageId && cleanedText.trim().length > 0) {
+        try {
+          console.log("📝 Starting evaluation for message:", actualMessageId);
+          const evalResponse = await axios.post(`${SERVER_URL}/evaluate`, {
+            argument: cleanedText,
+            team: (userStance.id || userStance).toLowerCase(),
+            roomId: roomId,
+            userId: userId,
+            username: username,
+            messageId: actualMessageId
+          }, {
+            timeout: 30000 // 30 second timeout
+          });
 
-              // Show evaluation to user
+          if (evalResponse.data.success) {
+            const { evaluation, currentStandings, winner } = evalResponse.data;
+
+            // Update local scores
+            if (currentStandings) {
+              setDebateScores(currentStandings);
+            }
+
+            // REFRESH LEADERBOARD AFTER EVALUATION
+            fetchScoreboard();
+
+            // Show evaluation to user (non-blocking)
+            setTimeout(() => {
               Alert.alert(
                 '📊 Argument Evaluated!',
                 `Your argument scored: ${evaluation.totalScore}/60\n\n` +
@@ -1723,50 +2339,36 @@ const endDebate = useCallback(async () => {
                 `Feedback: ${evaluation.feedback}`,
                 [{ text: 'OK' }]
               );
+            }, 500);
 
-              // Update message with evaluation score - CHECK SOCKET FIRST
-              const updatedMessageData = {
-                ...messageData,
-                evaluationId: evaluation.evaluationId,
-                evaluationScore: evaluation.totalScore
-              };
-
-              // CRITICAL FIX: Check socket before emitting
-              if (socketRef.current && socketRef.current.connected) {
-                socketRef.current.emit('update_message_evaluation', updatedMessageData);
-              } else {
-                console.warn('Socket not available for evaluation update');
-                // Optionally queue this update for when socket reconnects
-              }
-
-              // Check if debate ended
-              if (winner && winner.winner !== 'undecided') {
-                setWinner(winner.winner);
-                setDebateEnded(true);
-                // Refresh leaderboard when debate ends
-                fetchScoreboard();
-              }
+            // Check if debate ended
+            if (winner && winner.winner !== 'undecided') {
+              setWinner(winner.winner);
+              setDebateEnded(true);
+              fetchScoreboard();
             }
-          } catch (error) {
-            console.error('Evaluation error:', error);
-            // Continue without evaluation
           }
+        } catch (error) {
+          console.error('Evaluation error:', error);
+          // Don't show error for evaluation failures
+        }
+      }
 
-          setText('');
-        }
-        if (ack && ack.error) {
-          Alert.alert('Error', 'Failed to send message');
-        } else if (isAIDetected) {
-          handleAIDetection();
-        }
-      });
+      setText('');
+      if (isAIDetected) {
+        handleAIDetection();
+      }
 
     } catch (error) {
       console.error('Socket emit error:', error);
       Alert.alert('Connection Error', 'Failed to send message. Please check your connection.');
+
+      // Try to reconnect
+      if (socketRef.current) {
+        socketRef.current.connect();
+      }
     }
 
-    setText('');
     setPendingMessage(null);
   };
 
